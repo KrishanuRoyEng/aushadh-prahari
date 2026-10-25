@@ -1,0 +1,170 @@
+[
+  {
+    "brand": "Glucophage",
+    "brandBn": "গ্লুকোফাজ",
+    "salt": "Metformin hydrochloride",
+    "classes": ["metformin"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Glycomet",
+    "brandBn": "গ্লাইকোমেট",
+    "salt": "Metformin hydrochloride",
+    "classes": ["metformin"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Amaryl",
+    "brandBn": "আমারিল",
+    "salt": "Glimepiride",
+    "classes": ["sulfonylurea"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Glimy",
+    "brandBn": "গ্লাইমি",
+    "salt": "Glimepiride",
+    "classes": ["sulfonylurea"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Glimpid",
+    "brandBn": "গ্লিম্পিড",
+    "salt": "Glimepiride",
+    "classes": ["sulfonylurea"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Jardiance",
+    "brandBn": "জারডিয়ান্স",
+    "salt": "Empagliflozin",
+    "classes": ["sglt2_inhibitor"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Forxiga",
+    "brandBn": "ফোরজিগা",
+    "salt": "Dapagliflozin",
+    "classes": ["sglt2_inhibitor"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Lasix",
+    "brandBn": "লাসিক্স",
+    "salt": "Furosemide",
+    "classes": ["diuretic_loop"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Frusamide",
+    "brandBn": "ফ্রুসামাইড",
+    "salt": "Furosemide",
+    "classes": ["diuretic_loop"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Hydrochlorthiazide",
+    "brandBn": "হাইড্রোক্লোরোথায়াজাইড",
+    "salt": "Hydrochlorothiazide",
+    "classes": ["diuretic_thiazide"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Envas",
+    "brandBn": "এনভাস",
+    "salt": "Enalapril maleate",
+    "classes": ["ace_inhibitor"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Cardace",
+    "brandBn": "কার্ডেস",
+    "salt": "Ramipril",
+    "classes": ["ace_inhibitor"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Ramicard",
+    "brandBn": "রামিকার্ড",
+    "salt": "Ramipril",
+    "classes": ["ace_inhibitor"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Cosart",
+    "brandBn": "কোসার্ট",
+    "salt": "Losartan potassium",
+    "classes": ["arb"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Losacar",
+    "brandBn": "লোসাকার",
+    "salt": "Losartan potassium",
+    "classes": ["arb"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Telma",
+    "brandBn": "তেলমা",
+    "salt": "Telmisartan",
+    "classes": ["arb"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Brufen",
+    "brandBn": "ব্রুফেন",
+    "salt": "Ibuprofen",
+    "classes": ["nsaid"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Combiflam",
+    "brandBn": "কম্বিফ্লাম",
+    "salt": "Ibuprofen + Paracetamol",
+    "classes": ["nsaid"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Voveran",
+    "brandBn": "ভোভেরান",
+    "salt": "Diclofenac sodium",
+    "classes": ["nsaid"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Paracetamol",
+    "brandBn": "প্যারাসিটামল",
+    "salt": "Paracetamol (Acetaminophen)",
+    "classes": ["other"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  },
+  {
+    "brand": "Crocin",
+    "brandBn": "ক্রোসিন",
+    "salt": "Paracetamol (Acetaminophen)",
+    "classes": ["other"],
+    "signedOff": false,
+    "source": "PLACEHOLDER - TO BE VERIFIED by pharmacist"
+  }
+]
