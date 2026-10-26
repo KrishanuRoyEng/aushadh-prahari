@@ -17,7 +17,35 @@ When a patient on chronic medicines (for diabetes, hypertension, chronic kidney 
 4. **Mandatory Disclaimer**: Every screen and message displays:  
    > *"Decision-support aid. Not a medical device. Do not change any medicine without a doctor."*
 5. **No Invented Clinical Data**: All rules in `ruleTable.ts` and brand entries in `brands.seed.json` are marked `signedOff: false` with visible *"UNSIGNED RULE — clinician review required"* badges until signed off in the Review Queue.
-6. **Synthetic Demo Data**: Demo metrics and dashboards are explicitly labeled `"⚠️ SYNTHETIC DEMO DATA"`. Evaluation metrics are strictly calculated from user-imported ground truth data.
+6. **Synthetic Demo Data**: Demo metrics and dashboards are explicitly labeled `"⚠️ SYNTHETIC DEMO DATA"`. Evaluation metrics are strictly calculated from user-imported or demo benchmark vignettes.
+
+---
+
+## 🌐 Language Consistency & Browser Auto-Translate Prevention
+
+- **Single Language Switcher**: The header dropdown controls the entire interface across Bengali (`bn`), Hindi (`hi`), and English (`en`), persisting in `localStorage` and synchronizing with Web Speech API recognition and synthesis (`bn-IN`, `hi-IN`, `en-IN`).
+- **Browser Auto-Translate Prevention**: Enforces `<html lang={lang} translate="no">` and `<meta name="google" content="notranslate" />` to block unpredictable browser auto-translations.
+- **Language Audit Tool**: Accessible at `/about/language-check`, providing a side-by-side verification table of all strings across languages with loud failures (`[[key]]`) for any untranslated token in development.
+
+---
+
+## 🔐 Review Queue PIN Authentication & Security
+
+- **First-Time PIN Establishment**: On first access to `/review`, the reviewer establishes a personal 4–6 digit PIN with mandatory confirmation. There is **no default PIN** in the application.
+- **Web Crypto PBKDF2 Hashing**: PINs are hashed client-side using Web Crypto PBKDF2 (HMAC-SHA-256, 100,000 iterations, unique device salt).
+- **Lockout & Inactivity Protection**: Tracks failed attempts with a countdown, enforcing a 30-second lockout after 5 consecutive failures. Sessions automatically lock after 5 minutes of inactivity.
+- **Clinical Governance**: Sign-offs record the physician's name, WBMC registration number, and timestamp.
+> *Note: This client-side PIN protects against casual device-level snooping on shared community tablets; enterprise clinical deployment requires server-side authentication.*
+
+---
+
+## 🎯 Demo Mode & Guided Presentation Walkthrough
+
+- **One-Tap Demo Switch**: Available in the top header and at `/demo` with a persistent yellow banner `"DEMO MODE — SYNTHETIC WALKTHROUGH DATA"`.
+- **Complete Storage Isolation**: When Demo Mode is active, all queries and mutations are isolated to in-memory/demo state—**real local IndexedDB records are never modified**.
+- **Preloaded Presentation Caseload**: Seeds 8 representative patients, 3 acute illness scenarios, 1 heatwave caseload, and 20 multi-rater benchmark vignettes.
+- **6-Step Guided Checklist**: Pre-configured jump buttons at `/demo` for live demonstration of language switching, dehydration + ACEi + metformin checks, red-flag emergency overrides, unrecognized village brand escalation, PIN-gated sign-off, and validation metrics.
+- **Single-Tap Reset**: Reset button immediately returns the demo environment to a clean baseline state.
 
 ---
 
@@ -26,7 +54,7 @@ When a patient on chronic medicines (for diabetes, hypertension, chronic kidney 
 > [!CAUTION]
 > **Clinician Review Required Before Clinical Deployment:**
 > - **Rules Table**: The sick-day medication rules in `src/lib/ruleTable.ts` are clinical placeholder examples based on typical guidelines (e.g. SICK rules for ACEi/ARB/diuretics/metformin/SGLT2i/NSAIDs) but **have NOT been certified or signed off by local health authorities**.
-> - **Brand Dictionary**: The seed brand dictionary contains ~20 placeholder mappings for demonstration. All unapproved brands are treated as UNKNOWN and flagged for doctor consultation.
+> - **Brand Dictionary**: The seed brand dictionary contains placeholder mappings for demonstration. All unapproved brands are treated as UNKNOWN and flagged for doctor consultation.
 > - **Heat Risk Weights**: Risk scoring weights in `src/lib/risk.ts` are transparent heuristic placeholders, not derived from epidemiological models.
 > - **AI Extraction Accuracy**: Voice recognition and transcript parsing accuracy depends on acoustic noise, dialect variations, and device microphones. Always verify parsed fields before confirming.
 
@@ -40,7 +68,7 @@ When a patient on chronic medicines (for diabetes, hypertension, chronic kidney 
 - **PWA**: Service Worker (`public/sw.js`) + Web App Manifest (`public/manifest.json`)
 - **Speech**: Web Speech API (`SpeechRecognition` for voice input, `SpeechSynthesis` for TTS in Bengali, Hindi, and English)
 - **Weather**: Open-Meteo API (free, open, keyless) with offline manual override
-- **Testing**: Vitest (pure logic, rule engine, banned wording lint, risk scoring, metrics) + Playwright (browser smoke testing)
+- **Testing**: Vitest (110 tests covering rules, fail-safes, banned words, PIN PBKDF2, i18n completeness, and JSX lint) + Playwright (6 end-to-end browser tests)
 
 ---
 
@@ -69,7 +97,7 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### 4. Build for Production
+### 4. Build & Start Production Server
 ```bash
 npm run build
 npm run start
@@ -77,18 +105,16 @@ npm run start
 
 ---
 
-## 🧪 Testing
+## 🧪 Testing Quality Gates
 
-### Run Vitest Unit Tests
-Includes 95 tests covering rule evaluation, fail-safe paths, banned-wording lint, risk scoring, MO message builder, and evaluation metrics:
+### Run Vitest Unit Tests (110 Tests)
+Includes rule evaluation, fail-safe paths, banned-wording lint, risk scoring, MO message builder, evaluation metrics, PBKDF2 PIN authentication, i18n completeness, and JSX unlocalized string scanner:
 ```bash
 npm run test
 ```
 
-### Lint for Banned Wording
-Our build includes a test (`src/lib/bannedWords.test.ts`) that asserts no rule text in English, Bengali, or Hindi contains imperative directives like "stop", "skip", "reduce", "hold", or "do not take".
-
-### Run Playwright E2E Smoke Test
+### Run Playwright E2E Tests (6 Tests)
+Validates browser auto-translate prevention, dynamic language switching across Bengali and Hindi without reloads, side-by-side language audits, first-time PBKDF2 PIN setup/lockout, and full check-flow execution:
 ```bash
 npx playwright test
 ```
@@ -100,33 +126,15 @@ npx playwright test
 | Route | Feature | Description |
 |---|---|---|
 | `/` | **Home** | Primary navigation, font scaler (100/125/150%), MO phone config, sync status. |
-| `/check` | **Illness Check** | Voice or manual symptom input, fuzzy brand search, deterministic rule evaluation, MO message generation, home care reminders. |
+| `/check` | **Illness Check** | Voice or manual symptom input, fuzzy brand search, deterministic rule evaluation, MO message generation, home care reminders. Supports `?demo=scenario1/2/3`. |
 | `/heat` | **Heatwave List** | 3-day Open-Meteo forecast, heat index calculation, caseload risk ranking, "Called / Not reached" tracker. |
 | `/patients` | **Patient Store** | Pseudonymous local patient tokens (DPDP Act aligned, no names/phone numbers). |
-| `/review` | **Review Queue** | PIN-gated review interface for pharmacists & physicians to approve brands and sign off rules. |
+| `/review` | **Review Queue** | PBKDF2 PIN-gated review interface for pharmacists & physicians to approve brands and sign off rules. |
 | `/evaluate` | **Evaluation Harness** | Benchmarking suite for clinical vignettes (sensitivity, specificity, kappa, missed urgent cases), brand mapping, and speech extraction. |
-| `/dashboard` | **Demo Dashboard** | Synthetic demo dataset (30 checks across 3 fictional PHCs) with toggle to view real local data. |
+| `/demo` | **Demo Walkthrough** | 6-step guided checklist with 1-tap launchers for presentations and automated demo seeding/reset. |
+| `/dashboard` | **Analytics Dashboard** | Case breakdown by illness, drug classes, and heat index with real vs synthetic data toggle. |
 | `/about` | **About & Privacy** | Clinical limits, DPDP Act 2023 alignment, WCAG 2.2 AA accessibility documentation, data deletion tool. |
-
----
-
-## 📥 How to Import Data
-
-### Importing Brand Dictionaries (CSV)
-Navigate to `/review` (Default PIN: `1234`), click **CSV Import**, and provide a file with columns:
-```csv
-brand,brandBn,salt,classes,signedOff,source
-Envas,এনভাস,Enalapril,ace_inhibitor,true,WB Essential Drug List 2024
-Glycomet,গ্লাইকোমেট,Metformin,metformin,true,WB Essential Drug List 2024
-```
-
-### Importing Clinical Vignettes (CSV)
-Navigate to `/evaluate`, click **CSV ফাইল আপলোড** or paste into the textarea:
-```csv
-case_id,age_band,pregnant,kidney_disease,symptoms,medicines,reviewer_1,reviewer_2,reviewer_3
-VIG-01,elderly,no,yes,loose_motions;fever,Envas (ace_inhibitor);Glycomet (metformin),yes,yes,yes
-VIG-02,adult,no,no,none,Amlodipine (other),no,no,no
-```
+| `/about/language-check` | **Language Audit** | Comprehensive side-by-side string comparison and verification table across EN, BN, and HI. |
 
 ---
 

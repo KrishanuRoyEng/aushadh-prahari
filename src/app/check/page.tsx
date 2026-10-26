@@ -13,8 +13,8 @@ import {
   savePendingReview,
   type CheckRecord,
 } from "@/lib/db";
-import { searchBrands, lookupBrand } from "@/lib/brands";
-import { evaluate, SAFETY_DISCLAIMER } from "@/lib/rules";
+import { searchBrands, lookupBrand, getBrandDisplayName } from "@/lib/brands";
+import { evaluate } from "@/lib/rules";
 import { buildMOMessage, type BuiltMessage } from "@/lib/message";
 import type {
   Patient,
@@ -37,17 +37,17 @@ const ALL_SYMPTOMS: { id: IllnessSymptom; icon: string; labelKey: string }[] = [
   { id: "none", icon: "✓", labelKey: "symptomNone" },
 ];
 
-const ALL_DRUG_CLASSES: { id: DrugClass; label: string }[] = [
-  { id: "ace_inhibitor", label: "ACE Inhibitor (e.g. Enalapril, Ramipril)" },
-  { id: "arb", label: "ARB (e.g. Losartan, Telmisartan)" },
-  { id: "diuretic_loop", label: "Loop Diuretic (e.g. Furosemide)" },
-  { id: "diuretic_thiazide", label: "Thiazide Diuretic (e.g. Hydrochlorothiazide, Chlorthalidone)" },
-  { id: "sglt2_inhibitor", label: "SGLT2 Inhibitor (e.g. Dapagliflozin, Empagliflozin)" },
-  { id: "metformin", label: "Metformin" },
-  { id: "sulfonylurea", label: "Sulfonylurea (e.g. Glimepiride, Gliclazide)" },
-  { id: "nsaid", label: "NSAID (e.g. Ibuprofen, Diclofenac)" },
-  { id: "other", label: "Other / Unflagged" },
-  { id: "unknown", label: "Unknown class" },
+const DRUG_CLASS_KEYS: DrugClass[] = [
+  "ace_inhibitor",
+  "arb",
+  "diuretic_loop",
+  "diuretic_thiazide",
+  "sglt2_inhibitor",
+  "metformin",
+  "sulfonylurea",
+  "nsaid",
+  "other",
+  "unknown",
 ];
 
 export default function CheckPage() {
@@ -109,6 +109,110 @@ export default function CheckPage() {
     setLang(getLanguage());
     setPatientToken(generatePatientToken());
     getAllPatients().then((pts) => setSavedPatients(pts)).catch(() => {});
+
+    // Check for demo walkthrough scenarios in URL query
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const demoParam = params.get("demo");
+      if (demoParam === "scenario1") {
+        setPatientToken("DEMO-P01");
+        setAgeBand("elderly");
+        setPregnant(false);
+        setKidneyDisease(false);
+        setSelectedSymptoms(["loose_motions"]);
+        setDurationDays(2);
+        setAbleToDrink(true);
+        setUrine8h(true);
+        const brands = [
+          { brand: "Cardace", classes: ["ace_inhibitor" as DrugClass], signedOff: true, source: "National Formularies" },
+          { brand: "Glycomet", classes: ["metformin" as DrugClass], signedOff: true, source: "National Formularies" },
+        ];
+        setSelectedBrands(brands);
+        const p: Patient = { token: "DEMO-P01", ageBand: "elderly", pregnant: false, knownKidneyDisease: false, createdAt: new Date().toISOString() };
+        const s: ParsedSymptoms = {
+          symptoms: { value: ["loose_motions"], confidence: 1 },
+          durationDays: { value: 2, confidence: 1 },
+          ableToDrinkFluids: { value: true, confidence: 1 },
+          urinePastEightHours: { value: true, confidence: 1 },
+          dizziness: { value: false, confidence: 1 },
+          confusion: { value: false, confidence: 1 },
+          bloodInStool: { value: false, confidence: 1 },
+          chestPain: { value: false, confidence: 1 },
+          cannotKeepFluids: { value: false, confidence: 1 },
+        };
+        const res = evaluate({ patient: p, symptoms: s, brands: ["Cardace", "Glycomet"], isHeatDay: false, timestamp: new Date().toISOString() });
+        setCheckResult(res);
+        setBuiltMessage(buildMOMessage({ patient: p, symptoms: s, result: res, isHeatDay: false, timestamp: new Date().toISOString() }));
+        setStep(4);
+      } else if (demoParam === "scenario2") {
+        setPatientToken("DEMO-P02");
+        setAgeBand("elderly");
+        setPregnant(false);
+        setKidneyDisease(true);
+        setCreatinine("2.2");
+        setEgfr("34");
+        setSelectedSymptoms(["loose_motions", "vomiting"]);
+        setDurationDays(2);
+        setAbleToDrink(false);
+        setUrine8h(false);
+        setDizziness(true);
+        setCannotKeepFluids(true);
+        const brands = [
+          { brand: "Lasix", classes: ["diuretic_loop" as DrugClass], signedOff: true, source: "National Formularies" },
+          { brand: "Cosart", classes: ["arb" as DrugClass], signedOff: true, source: "National Formularies" },
+        ];
+        setSelectedBrands(brands);
+        const p: Patient = { token: "DEMO-P02", ageBand: "elderly", pregnant: false, knownKidneyDisease: true, latestCreatinine: 2.2, latestEGFR: 34, createdAt: new Date().toISOString() };
+        const s: ParsedSymptoms = {
+          symptoms: { value: ["loose_motions", "vomiting"], confidence: 1 },
+          durationDays: { value: 2, confidence: 1 },
+          ableToDrinkFluids: { value: false, confidence: 1 },
+          urinePastEightHours: { value: false, confidence: 1 },
+          dizziness: { value: true, confidence: 1 },
+          confusion: { value: false, confidence: 1 },
+          bloodInStool: { value: false, confidence: 1 },
+          chestPain: { value: false, confidence: 1 },
+          cannotKeepFluids: { value: true, confidence: 1 },
+        };
+        const res = evaluate({ patient: p, symptoms: s, brands: ["Lasix", "Cosart"], isHeatDay: false, timestamp: new Date().toISOString() });
+        setCheckResult(res);
+        setBuiltMessage(buildMOMessage({ patient: p, symptoms: s, result: res, isHeatDay: false, timestamp: new Date().toISOString() }));
+        setStep(4);
+      } else if (demoParam === "scenario3") {
+        setPatientToken("DEMO-P03");
+        setAgeBand("adult");
+        setPregnant(false);
+        setKidneyDisease(false);
+        setSelectedSymptoms(["fever", "not_eating_drinking"]);
+        setDurationDays(1);
+        setAbleToDrink(true);
+        setUrine8h(true);
+        const brands = [
+          { brand: "AyurDiab-Plus", classes: ["unknown" as DrugClass], signedOff: false, source: "Village Pharmacy / Unmapped", isCustom: true, pendingReview: true },
+        ];
+        setSelectedBrands(brands);
+        const p: Patient = { token: "DEMO-P03", ageBand: "adult", pregnant: false, knownKidneyDisease: false, createdAt: new Date().toISOString() };
+        const s: ParsedSymptoms = {
+          symptoms: { value: ["fever", "not_eating_drinking"], confidence: 1 },
+          durationDays: { value: 1, confidence: 1 },
+          ableToDrinkFluids: { value: true, confidence: 1 },
+          urinePastEightHours: { value: true, confidence: 1 },
+          dizziness: { value: false, confidence: 1 },
+          confusion: { value: false, confidence: 1 },
+          bloodInStool: { value: false, confidence: 1 },
+          chestPain: { value: false, confidence: 1 },
+          cannotKeepFluids: { value: false, confidence: 1 },
+        };
+        const res = evaluate({ patient: p, symptoms: s, brands: ["AyurDiab-Plus"], isHeatDay: false, timestamp: new Date().toISOString() });
+        setCheckResult(res);
+        setBuiltMessage(buildMOMessage({ patient: p, symptoms: s, result: res, isHeatDay: false, timestamp: new Date().toISOString() }));
+        setStep(4);
+      }
+    }
+
+    const handleLangChange = () => setLang(getLanguage());
+    window.addEventListener("ap-lang-change", handleLangChange);
+    return () => window.removeEventListener("ap-lang-change", handleLangChange);
   }, []);
 
   // Filter brands when user types
@@ -157,7 +261,7 @@ export default function CheckPage() {
       setPatientToken(generatePatientToken());
     }
     setStep(2);
-    handleReadAloud(t("stepSymptoms", lang));
+    handleReadAloud(t("stepSymptomsPrompt", lang));
   }
 
   // Toggle symptom button
@@ -191,7 +295,7 @@ export default function CheckPage() {
       },
       (err) => {
         setIsListening(false);
-        setVoiceNotice(`Speech error: ${err}`);
+        setVoiceNotice(err);
       },
       () => {
         setIsListening(false);
@@ -200,7 +304,7 @@ export default function CheckPage() {
 
     if (!handle) {
       setIsListening(false);
-      setVoiceNotice("Voice recognition is not supported in this browser. Please use manual entry.");
+      setVoiceNotice(t("noVoice", lang));
     }
   }
 
@@ -223,7 +327,6 @@ export default function CheckPage() {
       const data: ParsedSymptoms = await res.json();
       setVoiceParsedData(data);
 
-      // Auto-populate fields from parsed symptoms
       if (data.symptoms?.value?.length > 0) {
         setSelectedSymptoms(data.symptoms.value);
       }
@@ -233,7 +336,7 @@ export default function CheckPage() {
       if (data.ableToDrinkFluids?.value != null) {
         setAbleToDrink(data.ableToDrinkFluids.value);
       }
-      if (data.urinePastEightHours?.value !== undefined) {
+      if (data.urinePastEightHours?.value !== undefined && data.urinePastEightHours.value !== null) {
         setUrine8h(data.urinePastEightHours.value);
       }
       if (data.dizziness?.value != null) {
@@ -252,9 +355,9 @@ export default function CheckPage() {
         setCannotKeepFluids(data.cannotKeepFluids.value);
       }
 
-      setVoiceNotice("Voice transcript parsed. Please review and confirm below.");
+      setVoiceNotice(t("stepSymptomsParseSuccess", lang));
     } catch {
-      setVoiceNotice("Could not reach AI parser (offline or no key). Degraded to manual selection.");
+      setVoiceNotice(t("aiManualFallback", lang));
     } finally {
       setIsParsingVoice(false);
     }
@@ -266,7 +369,7 @@ export default function CheckPage() {
       setSelectedSymptoms(["none"]);
     }
     setStep(3);
-    handleReadAloud(t("stepMedicines", lang));
+    handleReadAloud(t("stepMedicinesPrompt", lang));
   }
 
   // Medicine brand selection
@@ -300,7 +403,7 @@ export default function CheckPage() {
         brand: customBrandName.trim(),
         classes: [cls],
         signedOff: false,
-        source: pendingReview ? "AI suggestion — pending clinician sign-off" : "Manual entry CHO",
+        source: pendingReview ? t("brandStatusPendingReview", lang) : t("brandStatusUnknown", lang),
         isCustom: true,
         pendingReview,
       },
@@ -328,26 +431,26 @@ export default function CheckPage() {
       const data = await res.json();
       const suggested = (data.suggestedClass as DrugClass) || "unknown";
 
-      // Queue for pharmacist review
       await savePendingReview({
         id: `rev_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         type: "brand_suggestion",
+        createdAt: new Date().toISOString(),
         brand: customBrandName.trim(),
         suggestedClass: suggested,
         confidence: data.confidence ?? 0.5,
         status: "pending",
-        createdAt: new Date().toISOString(),
+        source: "AI suggestion from user input",
+        submittedBy: "Illness Check Flow",
+        submittedAt: new Date().toISOString(),
       });
 
       // NON-NEGOTIABLE SAFETY RULE:
       // Suggested class goes to review queue and is NOT used for clinical flags until approved.
       // The check treats this medicine as UNKNOWN -> ASK_DOCTOR_TODAY.
       handleAddCustomBrand("unknown", true);
-      setSuggestNotice(
-        `AI suggested: ${suggested}. Sent to Pharmacist Review Queue. Per safety rules, this medicine is flagged as UNKNOWN until approved.`
-      );
+      setSuggestNotice(t("submitToReview", lang));
     } catch {
-      setSuggestNotice("AI service unavailable. Marked as Unknown class (fails safe: ask doctor).");
+      setSuggestNotice(t("aiManualFallback", lang));
       handleAddCustomBrand("unknown", false);
     } finally {
       setIsSuggestingClass(false);
@@ -356,7 +459,6 @@ export default function CheckPage() {
 
   // Execute Rule Engine & Build Result
   async function handleRunCheck() {
-    // 1. Build Patient record
     const patientObj: Patient = {
       token: patientToken.trim() || generatePatientToken(),
       ageBand,
@@ -374,10 +476,8 @@ export default function CheckPage() {
       createdAt: new Date().toISOString(),
     };
 
-    // Save patient profile
     await savePatient(patientObj);
 
-    // 2. Build Symptoms record
     const symptomsObj: ParsedSymptoms = {
       transcript: transcript || undefined,
       symptoms: { value: selectedSymptoms.length > 0 ? selectedSymptoms : ["none"], confidence: 1 },
@@ -391,7 +491,6 @@ export default function CheckPage() {
       cannotKeepFluids: { value: cannotKeepFluids, confidence: 1 },
     };
 
-    // 3. Build Check Input
     const checkInput: CheckInput = {
       patient: patientObj,
       symptoms: symptomsObj,
@@ -400,11 +499,9 @@ export default function CheckPage() {
       timestamp: new Date().toISOString(),
     };
 
-    // 4. Deterministic Rule Engine Evaluation (Pure, Zero AI)
     const result = evaluate(checkInput);
     setCheckResult(result);
 
-    // 5. Build MO Message
     const moPhone = getMOPhone();
     const built = buildMOMessage({
       patient: patientObj,
@@ -416,7 +513,6 @@ export default function CheckPage() {
     });
     setBuiltMessage(built);
 
-    // 6. Save check record to IndexedDB
     const checkRecord: CheckRecord = {
       id: `chk_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       input: checkInput,
@@ -425,7 +521,6 @@ export default function CheckPage() {
     };
     await saveCheck(checkRecord);
 
-    // 7. Enqueue in Outbox for sync
     await enqueue({
       id: `out_${checkRecord.id}`,
       type: "check",
@@ -437,7 +532,6 @@ export default function CheckPage() {
 
     setStep(4);
 
-    // Read urgency aloud
     if (result.urgency === "GO_TO_HEALTH_FACILITY_NOW") {
       handleReadAloud(t("resultUrgentBanner", lang));
     } else if (result.urgency === "ASK_DOCTOR_TODAY") {
@@ -468,10 +562,10 @@ export default function CheckPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <span style={{ fontSize: "1.2rem", fontWeight: 700, color: "var(--color-primary-dark)" }}>
-            {step === 1 && "১. রোগী (Patient)"}
-            {step === 2 && "২. লক্ষণ (Symptoms)"}
-            {step === 3 && "৩. ওষুধ (Medicines)"}
-            {step === 4 && "৪. ফলাফল (Decision Support)"}
+            {step === 1 && t("step1Title", lang)}
+            {step === 2 && t("step2Title", lang)}
+            {step === 3 && t("step3Title", lang)}
+            {step === 4 && t("step4Title", lang)}
           </span>
         </div>
         <div style={{ display: "flex", gap: "4px" }}>
@@ -503,7 +597,7 @@ export default function CheckPage() {
                 style={{ padding: "0.25rem 0.5rem", minHeight: "auto", fontSize: "0.75rem" }}
                 onClick={() => setPatientToken(generatePatientToken())}
               >
-                🔄 নতুন কোড (New)
+                🔄 {t("patientCreateNew", lang)}
               </button>
             </div>
             <input
@@ -511,17 +605,14 @@ export default function CheckPage() {
               className="input"
               value={patientToken}
               onChange={(e) => setPatientToken(e.target.value)}
-              placeholder="e.g. AP-98214"
+              placeholder={t("patientTokenPlaceholder", lang)}
             />
-            <p style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", marginTop: "0.4rem" }}>
-              গোপনীয়তার সুরক্ষার জন্য কোনো আসল নাম সংরক্ষণ করা হয় না। (No real names stored).
-            </p>
 
             {/* Quick selector for existing patients */}
             {savedPatients.length > 0 && (
               <div style={{ marginTop: "0.75rem" }}>
                 <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--color-text-secondary)" }}>
-                  সংরক্ষিত রোগী বাছুন (Or pick saved patient):
+                  {t("patientSelectExisting", lang)}
                 </span>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginTop: "0.3rem" }}>
                   {savedPatients.slice(0, 5).map((p) => (
@@ -538,7 +629,7 @@ export default function CheckPage() {
                         cursor: "pointer",
                       }}
                     >
-                      {p.token} ({p.ageBand})
+                      {p.token} ({t(`ageBand${p.ageBand.charAt(0).toUpperCase() + p.ageBand.slice(1)}` as any, lang)})
                     </button>
                   ))}
                 </div>
@@ -566,7 +657,7 @@ export default function CheckPage() {
               ))}
             </div>
 
-            {/* Pregnancy toggle (adult female) */}
+            {/* Pregnancy toggle */}
             <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <span style={{ fontWeight: 600 }}>{t("patientPregnant", lang)}</span>
               <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -623,7 +714,7 @@ export default function CheckPage() {
                     className="input"
                     value={creatinine}
                     onChange={(e) => setCreatinine(e.target.value)}
-                    placeholder="e.g. 1.8"
+                    placeholder="1.8"
                   />
                 </div>
                 <div>
@@ -633,7 +724,7 @@ export default function CheckPage() {
                     className="input"
                     value={egfr}
                     onChange={(e) => setEgfr(e.target.value)}
-                    placeholder="e.g. 35"
+                    placeholder="35"
                   />
                 </div>
               </div>
@@ -686,7 +777,7 @@ export default function CheckPage() {
           </div>
 
           <button className="btn btn-primary btn-full" style={{ fontSize: "1.1rem" }} onClick={handleStep1Next}>
-            পরের ধাপ: লক্ষণ (Next: Symptoms) ➔
+            {t("next", lang)}: {t("step2Title", lang)} ➔
           </button>
         </div>
       )}
@@ -696,15 +787,15 @@ export default function CheckPage() {
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--color-primary-dark)" }}>
-              {t("stepSymptoms", lang)}
+              {t("stepSymptomsPrompt", lang)}
             </h2>
             <button
               type="button"
               className="btn btn-secondary"
               style={{ minHeight: 36, padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}
-              onClick={() => handleReadAloud(t("stepSymptoms", lang))}
+              onClick={() => handleReadAloud(t("stepSymptomsPrompt", lang))}
             >
-              🔊 শোনান (Listen)
+              🔊 {t("stepSymptomsMicPrompt", lang)}
             </button>
           </div>
 
@@ -728,16 +819,16 @@ export default function CheckPage() {
             >
               <span style={{ fontSize: "1.4rem" }}>{isListening ? "🔴" : "🎙️"}</span>
               {isListening
-                ? "শুনছি... কথা বলুন (Listening...)"
+                ? t("stepSymptomsListening", lang)
                 : isParsingVoice
-                ? "AI পার্স করছে... (Analyzing voice...)"
-                : t("symptomMicButton", lang)}
+                ? t("askAILoading", lang)
+                : t("stepSymptomsMicPrompt", lang)}
             </button>
 
             {transcript && (
               <div style={{ marginTop: "0.75rem", textAlign: "left", background: "white", padding: "0.75rem", borderRadius: 8 }}>
                 <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-muted)" }}>
-                  রেকর্ড করা কথা (Transcript):
+                  {t("notes", lang)}:
                 </span>
                 <p style={{ fontSize: "0.9rem", color: "var(--color-text)", marginTop: "0.25rem" }}>{transcript}</p>
               </div>
@@ -748,9 +839,7 @@ export default function CheckPage() {
                 style={{
                   marginTop: "0.5rem",
                   fontSize: "0.8rem",
-                  color: voiceNotice.includes("error") || voiceNotice.includes("unavailable")
-                    ? "var(--color-danger)"
-                    : "var(--color-primary-dark)",
+                  color: "var(--color-primary-dark)",
                   fontWeight: 600,
                 }}
               >
@@ -780,7 +869,7 @@ export default function CheckPage() {
           {/* Manual Acute Questions */}
           <div className="card" style={{ marginBottom: "1rem" }}>
             <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.75rem", color: "var(--color-primary-dark)" }}>
-              তীব্রতার প্রশ্ন (Severity Questions):
+              {t("step2Subtitle", lang)}
             </h3>
 
             {/* Duration */}
@@ -969,10 +1058,10 @@ export default function CheckPage() {
 
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(1)}>
-              ⬅ পূর্ববর্তী (Back)
+              ⬅ {t("back", lang)}
             </button>
             <button className="btn btn-primary" style={{ flex: 2, fontSize: "1.05rem" }} onClick={handleStep2Next}>
-              পরের ধাপ: ওষুধ (Next: Medicines) ➔
+              {t("next", lang)}: {t("step3Title", lang)} ➔
             </button>
           </div>
         </div>
@@ -983,29 +1072,29 @@ export default function CheckPage() {
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--color-primary-dark)" }}>
-              {t("stepMedicines", lang)}
+              {t("stepMedicinesPrompt", lang)}
             </h2>
             <button
               type="button"
               className="btn btn-secondary"
               style={{ minHeight: 36, padding: "0.25rem 0.5rem", fontSize: "0.8rem" }}
-              onClick={() => handleReadAloud(t("stepMedicines", lang))}
+              onClick={() => handleReadAloud(t("stepMedicinesPrompt", lang))}
             >
-              🔊 শোনান (Listen)
+              🔊 {t("stepSymptomsMicPrompt", lang)}
             </button>
           </div>
 
           {/* Search Bar */}
           <div className="card" style={{ marginBottom: "1rem" }}>
             <label style={{ fontWeight: 600, fontSize: "0.85rem", display: "block", marginBottom: "0.3rem" }}>
-              {t("searchMedicine", lang)} (বাংলা বা ইংরেজি / Bengali or English):
+              {t("searchMedicine", lang)}
             </label>
             <input
               type="text"
               className="input"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="e.g. Envas, Losar, Glycomet, ডায়ামাইক্রন..."
+              placeholder={t("searchMedicinePlaceholder", lang)}
             />
 
             {/* Search Results Dropdown */}
@@ -1034,14 +1123,11 @@ export default function CheckPage() {
                     }}
                   >
                     <div>
-                      <span style={{ fontWeight: 600, color: "var(--color-text)" }}>{b.brand}</span>
-                      {b.brandBn && (
-                        <span style={{ marginLeft: "0.5rem", color: "var(--color-text-secondary)", fontSize: "0.85rem" }}>
-                          ({b.brandBn})
-                        </span>
-                      )}
+                      <span style={{ fontWeight: 600, color: "var(--color-text)" }}>
+                        {getBrandDisplayName(b, lang)}
+                      </span>
                       <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
-                        {b.genericSalt} · {b.classes.join(", ")}
+                        {b.salt} · {b.classes.map((cls) => t(`drugClass_${cls}` as any, lang)).join(", ")}
                       </div>
                     </div>
                     <span className={b.signedOff ? "badge badge-verified" : "badge badge-unsigned"}>
@@ -1056,14 +1142,14 @@ export default function CheckPage() {
           {/* Unknown Brand Helper / AI Suggestion */}
           <div className="card" style={{ marginBottom: "1rem", background: "#f8fafc" }}>
             <h3 style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--color-text-secondary)", marginBottom: "0.5rem" }}>
-              তালিকাভুক্ত নয় এমন ওষুধ? (Unknown brand not in list?):
+              {t("customBrandTitle", lang)}
             </h3>
             <input
               type="text"
               className="input"
               value={customBrandName}
               onChange={(e) => setCustomBrandName(e.target.value)}
-              placeholder="ওষুধের নাম লিখুন (Enter brand name)..."
+              placeholder={t("customBrandPlaceholder", lang)}
               style={{ marginBottom: "0.5rem" }}
             />
 
@@ -1075,7 +1161,7 @@ export default function CheckPage() {
                 disabled={!customBrandName.trim() || isSuggestingClass}
                 onClick={handleAskAISuggestClass}
               >
-                {isSuggestingClass ? "AI বিশ্লেষণ করছে..." : "🤖 " + t("askAISuggest", lang)}
+                {isSuggestingClass ? t("askAILoading", lang) : "🤖 " + t("askAISuggest", lang)}
               </button>
               <button
                 type="button"
@@ -1084,8 +1170,27 @@ export default function CheckPage() {
                 disabled={!customBrandName.trim()}
                 onClick={() => handleAddCustomBrand(customDrugClass, false)}
               >
-                ➕ নিজে যোগ করুন (Add Manual)
+                ➕ {t("addManualClass", lang)}
               </button>
+            </div>
+
+            {/* Manual class selection dropdown */}
+            <div style={{ marginTop: "0.5rem" }}>
+              <label style={{ fontSize: "0.75rem", fontWeight: 600, display: "block", marginBottom: "0.25rem" }}>
+                {t("customClassLabel", lang)}
+              </label>
+              <select
+                className="input"
+                value={customDrugClass}
+                onChange={(e) => setCustomDrugClass(e.target.value as DrugClass)}
+                style={{ fontSize: "0.85rem" }}
+              >
+                {DRUG_CLASS_KEYS.map((cls) => (
+                  <option key={cls} value={cls}>
+                    {t(`drugClass_${cls}` as any, lang)}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {suggestNotice && (
@@ -1107,12 +1212,12 @@ export default function CheckPage() {
           {/* Selected Medicines List */}
           <div className="card" style={{ marginBottom: "1.25rem" }}>
             <h3 style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: "0.75rem" }}>
-              নির্বাচিত ওষুধসমূহ ({selectedBrands.length}) (Selected Medicines):
+              {t("selectedMedicinesTitle", { count: selectedBrands.length }, lang)}
             </h3>
 
             {selectedBrands.length === 0 ? (
               <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", fontStyle: "italic" }}>
-                কোনো ওষুধ নির্বাচন করা হয়নি। ওপর থেকে খুঁজুন। (No medicines selected yet).
+                {t("selectedMedicinesEmpty", lang)}
               </p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -1130,9 +1235,11 @@ export default function CheckPage() {
                     }}
                   >
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>{b.brand}</div>
+                      <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>
+                        {getBrandDisplayName(b.brand, lang)}
+                      </div>
                       <div style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>
-                        শ্রেণী (Class): {b.classes.join(", ")}
+                        {b.classes.map((cls) => t(`drugClass_${cls}` as any, lang)).join(", ")}
                       </div>
                       <div style={{ marginTop: "2px" }}>
                         {b.signedOff ? (
@@ -1150,7 +1257,7 @@ export default function CheckPage() {
                       style={{ padding: "0.2rem 0.6rem", minHeight: 32, fontSize: "0.8rem" }}
                       onClick={() => handleRemoveBrand(idx)}
                     >
-                      মুছুন (✕)
+                      {t("removeMedicine", lang)}
                     </button>
                   </div>
                 ))}
@@ -1160,14 +1267,14 @@ export default function CheckPage() {
 
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setStep(2)}>
-              ⬅ পূর্ববর্তী (Back)
+              ⬅ {t("back", lang)}
             </button>
             <button
               className="btn btn-primary"
               style={{ flex: 2, fontSize: "1.05rem" }}
               onClick={handleRunCheck}
             >
-              ফলাফল দেখুন (View Decision Support) ➔
+              {t("next", lang)}: {t("step4Title", lang)} ➔
             </button>
           </div>
         </div>
@@ -1181,9 +1288,9 @@ export default function CheckPage() {
             <div className="banner banner-urgent">
               <span style={{ fontSize: "1.8rem" }}>🚨</span>
               <div>
-                <div>{t("resultUrgentBanner", lang)}</div>
+                <div style={{ fontWeight: 800 }}>{t("resultUrgentBanner", lang)}</div>
                 <div style={{ fontSize: "0.85rem", fontWeight: 500, marginTop: "2px" }}>
-                  জরুরি বিপদসূচক লক্ষণ চিহ্নিত হয়েছে। অবিলম্বে স্বাস্থ্য কেন্দ্রে রেফার করুন।
+                  {t("resultUrgentDesc", lang)}
                 </div>
               </div>
             </div>
@@ -1193,9 +1300,9 @@ export default function CheckPage() {
             <div className="banner banner-warn">
               <span style={{ fontSize: "1.8rem" }}>⚠️</span>
               <div>
-                <div>{t("resultAskDoctorBanner", lang)}</div>
+                <div style={{ fontWeight: 800 }}>{t("resultAskDoctorBanner", lang)}</div>
                 <div style={{ fontSize: "0.85rem", fontWeight: 500, marginTop: "2px" }}>
-                  চিহ্নিত ওষুধগুলির বিষয়ে আজই মেডিকেল অফিসারের (MO) পরামর্শ নিন।
+                  {t("resultAskDoctorDesc", lang)}
                 </div>
               </div>
             </div>
@@ -1205,9 +1312,9 @@ export default function CheckPage() {
             <div className="banner banner-ok">
               <span style={{ fontSize: "1.8rem" }}>✓</span>
               <div>
-                <div>{t("resultNoFlag", lang)}</div>
+                <div style={{ fontWeight: 800 }}>{t("resultNoFlag", lang)}</div>
                 <div style={{ fontSize: "0.85rem", fontWeight: 500, marginTop: "2px" }}>
-                  বর্তমান তথ্যের ভিত্তিতে কোনো ওষুধের সিদ্ধান্ত-সহায়তা ফ্ল্যাগ নেই।
+                  {t("resultNoFlagDesc", lang)}
                 </div>
               </div>
             </div>
@@ -1216,12 +1323,12 @@ export default function CheckPage() {
           {/* MEDICINE FLAGS LIST */}
           <div className="card" style={{ marginBottom: "1rem" }}>
             <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.75rem", color: "var(--color-primary-dark)" }}>
-              ওষুধের সিদ্ধান্ত-সহায়তা মূল্যায়ন (Medicine Decision Support):
+              {t("step4Title", lang)}
             </h3>
 
             {checkResult.perMedicine.length === 0 ? (
               <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
-                কোনো ওষুধ নির্বাচন করা হয়নি।
+                {t("none", lang)}
               </p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
@@ -1240,9 +1347,11 @@ export default function CheckPage() {
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                         <div>
-                          <div style={{ fontWeight: 700, fontSize: "1rem" }}>{med.brand}</div>
+                          <div style={{ fontWeight: 700, fontSize: "1rem" }}>
+                            {getBrandDisplayName(med.brand, lang)}
+                          </div>
                           <div style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>
-                            শ্রেণী (Class): {med.classes.join(", ")}
+                            {med.classes.map((cls) => t(`drugClass_${cls}` as any, lang)).join(", ")}
                           </div>
                         </div>
                         <span
@@ -1255,7 +1364,7 @@ export default function CheckPage() {
                             color: isFlagged ? "#991b1b" : "#065f46",
                           }}
                         >
-                          {isFlagged ? "⚠️ ASK DOCTOR TODAY" : "✓ NO FLAG"}
+                          {isFlagged ? `⚠️ ${t("resultAskDoctorBanner", lang)}` : `✓ ${t("resultNoFlag", lang)}`}
                         </span>
                       </div>
 
@@ -1275,7 +1384,7 @@ export default function CheckPage() {
                               padding: 0,
                             }}
                           >
-                            {isExpanded ? "▲ কেন? বন্ধ করুন" : "▼ কেন? নিয়ম দেখুন (Why? See rule)"}
+                            {isExpanded ? `▲ ${t("whyClose", lang)}` : `▼ ${t("whyToggle", lang)}`}
                           </button>
 
                           {isExpanded && (
@@ -1288,23 +1397,31 @@ export default function CheckPage() {
                                 border: "1px solid #e2e8f0",
                               }}
                             >
-                              {med.ruleHits.map((rule) => (
-                                <div key={rule.ruleId} style={{ marginBottom: "0.5rem" }}>
-                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-muted)" }}>
-                                      {rule.ruleId}
-                                    </span>
-                                    {rule.signedOff ? (
-                                      <span className="badge badge-verified">Signed off</span>
-                                    ) : (
-                                      <span className="badge badge-unsigned">UNSIGNED RULE — clinician review required</span>
-                                    )}
+                              {med.ruleHits.map((rule) => {
+                                const ruleKey = `rule_${rule.ruleId.replace("-", "")}`;
+                                const localizedRuleText =
+                                  rule.ruleText[lang] ||
+                                  t(ruleKey as any, lang) ||
+                                  rule.ruleText.en;
+
+                                return (
+                                  <div key={rule.ruleId} style={{ marginBottom: "0.5rem" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-muted)" }}>
+                                        {rule.ruleId}
+                                      </span>
+                                      {rule.signedOff ? (
+                                        <span className="badge badge-verified">{t("ruleSignedOffBadge", lang)}</span>
+                                      ) : (
+                                        <span className="badge badge-unsigned">{t("unsignedBadge", lang)}</span>
+                                      )}
+                                    </div>
+                                    <p style={{ fontSize: "0.85rem", marginTop: "2px", color: "var(--color-text)" }}>
+                                      {localizedRuleText}
+                                    </p>
                                   </div>
-                                  <p style={{ fontSize: "0.85rem", marginTop: "2px", color: "var(--color-text)" }}>
-                                    {rule.ruleText[lang] || rule.ruleText.en}
-                                  </p>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -1321,10 +1438,10 @@ export default function CheckPage() {
             <div className="card" style={{ marginBottom: "1rem", background: "#f0fdf4" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
                 <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--color-primary-dark)" }}>
-                  মেডিকেল অফিসারকে বার্তা (MO Message):
+                  {t("moMessageTitle", lang)}
                 </h3>
                 <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-text-muted)" }}>
-                  {builtMessage.text.length}/300 chars
+                  {t("moMessageCount", { count: builtMessage.text.length }, lang)}
                 </span>
               </div>
 
@@ -1351,12 +1468,12 @@ export default function CheckPage() {
                   style={{ fontSize: "0.8rem", padding: "0.4rem" }}
                   onClick={handleCopyMessage}
                 >
-                  {copySuccess ? "✓ Copied!" : "📋 " + t("copyMessage", lang)}
+                  {copySuccess ? t("messageCopied", lang) : "📋 " + t("copyMessage", lang)}
                 </button>
                 <a
                   href={builtMessage.smsLink}
                   className="btn btn-secondary"
-                  style={{ fontSize: "0.8rem", padding: "0.4rem", textDecoration: "none" }}
+                  style={{ fontSize: "0.8rem", padding: "0.4rem", textDecoration: "none", textAlign: "center" }}
                 >
                   ✉️ {t("shareViaSMS", lang)}
                 </a>
@@ -1365,7 +1482,7 @@ export default function CheckPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn btn-secondary"
-                  style={{ fontSize: "0.8rem", padding: "0.4rem", textDecoration: "none" }}
+                  style={{ fontSize: "0.8rem", padding: "0.4rem", textDecoration: "none", textAlign: "center" }}
                 >
                   💬 {t("shareViaWhatsApp", lang)}
                 </a>
@@ -1384,7 +1501,7 @@ export default function CheckPage() {
             }}
           >
             <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#065f46" }}>
-              🏠 হোম কেয়ার অনুস্মারক (Home Care):
+              🏠 {t("homeCareTitle", lang)}
             </span>
             <p style={{ fontSize: "0.85rem", color: "#065f46", marginTop: "0.25rem" }}>
               {t("homeCareReminder", lang)}
@@ -1393,7 +1510,7 @@ export default function CheckPage() {
 
           {/* MANDATORY SAFETY DISCLAIMER */}
           <div className="safety-disclaimer">
-            {SAFETY_DISCLAIMER}
+            🔒 {t("safetyDisclaimer", lang)}
           </div>
 
           {/* Action buttons */}
@@ -1410,10 +1527,10 @@ export default function CheckPage() {
                 setBuiltMessage(null);
               }}
             >
-              নতুন চেক শুরু করুন (New Check)
+              {t("homeNewCheck", lang)}
             </button>
             <Link href="/" className="btn btn-secondary" style={{ flex: 1, textAlign: "center" }}>
-              হোম পেজে ফিরুন (Home)
+              {t("navHome", lang)}
             </Link>
           </div>
         </div>

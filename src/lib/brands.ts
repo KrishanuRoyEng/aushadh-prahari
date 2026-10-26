@@ -25,6 +25,9 @@ function buildDict(entries: BrandEntry[]): BrandDict {
     if (entry.brandBn) {
       dict[entry.brandBn.toLowerCase()] = entry;
     }
+    if (entry.brandHi) {
+      dict[entry.brandHi.toLowerCase()] = entry;
+    }
   }
   return dict;
 }
@@ -47,6 +50,18 @@ export function resetToSeed(): void {
 export function lookupBrand(name: string): BrandEntry | null {
   const key = name.toLowerCase().trim();
   return BRANDS_DICT[key] ?? null;
+}
+
+export function getBrandDisplayName(entry: BrandEntry | string, lang: "bn" | "hi" | "en"): string {
+  const brandObj = typeof entry === "string" ? lookupBrand(entry) : entry;
+  if (!brandObj) return typeof entry === "string" ? entry : "";
+  if (lang === "bn" && brandObj.brandBn) {
+    return `${brandObj.brand} (${brandObj.brandBn})`;
+  }
+  if (lang === "hi" && brandObj.brandHi) {
+    return `${brandObj.brand} (${brandObj.brandHi})`;
+  }
+  return brandObj.brand;
 }
 
 // ─── Levenshtein distance (simple, ≤ 200 chars for safety) ───────────────────
@@ -168,7 +183,7 @@ function splitCSVLine(line: string): string[] {
 
 // ─── Export as CSV ────────────────────────────────────────────────────────────
 
-export function exportBrandsCSV(entries: BrandEntry[]): string {
+export function exportBrandsCSV(entries: BrandEntry[] = getAllBrandEntries()): string {
   const header =
     "brand,brandBn,salt,classes,signedOff,source,reviewerName,reviewedAt\n";
   const rows = entries.map((e) =>

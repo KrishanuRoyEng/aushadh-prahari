@@ -2,13 +2,21 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { t, getLanguage, type Lang } from "@/lib/i18n";
+import {
+  t,
+  getLanguage,
+  formatNumber,
+  isIndicNumeralsEnabled,
+  setIndicNumeralsEnabled,
+  type Lang,
+} from "@/lib/i18n";
 import { getFontScale, setFontScale, type FontScale, getMOPhone, setMOPhone, deleteAllData } from "@/lib/privacy";
 import { getPendingOutbox, getAllChecks } from "@/lib/db";
 
 export default function HomePage() {
   const [lang, setLang] = useState<Lang>("bn");
   const [fontScale, setFontScaleState] = useState<FontScale>(100);
+  const [indicNums, setIndicNums] = useState(false);
   const [moPhone, setMoPhoneState] = useState("");
   const [pendingSync, setPendingSync] = useState(0);
   const [totalChecks, setTotalChecks] = useState(0);
@@ -19,14 +27,28 @@ export default function HomePage() {
   useEffect(() => {
     setLang(getLanguage());
     setFontScaleState(getFontScale());
+    setIndicNums(isIndicNumeralsEnabled());
     setMoPhoneState(getMOPhone());
     getPendingOutbox().then((q) => setPendingSync(q.length));
     getAllChecks().then((c) => setTotalChecks(c.length));
+
+    const handleLangChange = () => {
+      setLang(getLanguage());
+      setIndicNums(isIndicNumeralsEnabled());
+    };
+    window.addEventListener("ap-lang-change", handleLangChange);
+    return () => window.removeEventListener("ap-lang-change", handleLangChange);
   }, []);
 
   function handleFontScale(scale: FontScale) {
     setFontScale(scale);
     setFontScaleState(scale);
+  }
+
+  function handleIndicToggle() {
+    const next = !indicNums;
+    setIndicNumeralsEnabled(next);
+    setIndicNums(next);
   }
 
   function handleMOPhoneSave(phone: string) {
@@ -39,7 +61,11 @@ export default function HomePage() {
     setSyncMsg("");
     try {
       const outbox = await getPendingOutbox();
-      if (outbox.length === 0) { setSyncMsg("✓ আপ টু ডেট"); setSyncing(false); return; }
+      if (outbox.length === 0) {
+        setSyncMsg(t("syncUpToDate", lang));
+        setSyncing(false);
+        return;
+      }
       const res = await fetch("/api/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -49,12 +75,12 @@ export default function HomePage() {
         const { markSynced } = await import("@/lib/db");
         for (const r of outbox.slice(0, 10)) await markSynced(r.id);
         setPendingSync(Math.max(0, outbox.length - 10));
-        setSyncMsg("✓ সিঙ্ক সম্পন্ন");
+        setSyncMsg(t("syncSuccess", lang));
       } else {
-        setSyncMsg("✗ সিঙ্ক ব্যর্থ — পুনরায় চেষ্টা করুন");
+        setSyncMsg(t("syncFailed", lang));
       }
     } catch {
-      setSyncMsg("✗ অফলাইন — পরে চেষ্টা করুন");
+      setSyncMsg(t("syncOffline", lang));
     }
     setSyncing(false);
   }
@@ -71,42 +97,49 @@ export default function HomePage() {
       icon: "🩺",
       cls: "big-btn-green",
       title: t("homeNewCheck", lang),
-      subtitle: "অসুস্থ রোগীর ওষুধ পরীক্ষা করুন",
+      subtitle: t("homeNewCheckSubtitle", lang),
     },
     {
       href: "/heat",
       icon: "🌡️",
       cls: "big-btn-amber",
       title: t("homeHeatwave", lang),
-      subtitle: "তাপপ্রবাহে ঝুঁকিপূর্ণ রোগীদের তালিকা",
+      subtitle: t("homeHeatwaveSubtitle", lang),
     },
     {
       href: "/patients",
       icon: "👥",
       cls: "big-btn-blue",
       title: t("homePatients", lang),
-      subtitle: "রোগী যোগ করুন ও দেখুন",
+      subtitle: t("homePatientsSubtitle", lang),
     },
     {
       href: "/review",
       icon: "🔬",
       cls: "big-btn-purple",
       title: t("homeReview", lang),
-      subtitle: "ব্র্যান্ড ও নিয়ম অনুমোদন করুন",
+      subtitle: t("homeReviewSubtitle", lang),
+    },
+    {
+      href: "/demo",
+      icon: "✨",
+      cls: "big-btn-teal",
+      title: t("homeDemo", lang),
+      subtitle: t("homeDemoSubtitle", lang),
     },
     {
       href: "/dashboard",
       icon: "📊",
-      cls: "big-btn-teal",
-      title: t("navDashboard", lang),
-      subtitle: "পরিসংখ্যান ও ডেমো ডেটা",
+      cls: "big-btn-blue",
+      title: t("homeDashboard", lang),
+      subtitle: t("homeDashboardSubtitle", lang),
     },
     {
       href: "/about",
       icon: "ℹ️",
       cls: "big-btn-red",
       title: t("homeAbout", lang),
-      subtitle: "সীমাবদ্ধতা, গোপনীয়তা, উৎস",
+      subtitle: t("homeAboutSubtitle", lang),
     },
   ];
 
@@ -116,10 +149,10 @@ export default function HomePage() {
       <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
         <div style={{ fontSize: "3.5rem", lineHeight: 1, marginBottom: "0.5rem" }}>💊</div>
         <h2 style={{ fontSize: "1.6rem", fontWeight: 800, color: "var(--color-primary-dark)" }}>
-          ঔষধ প্রহরী
+          {t("appName", lang)}
         </h2>
         <p style={{ color: "var(--color-text-muted)", fontSize: "0.9rem", marginTop: "0.25rem" }}>
-          CHO ও ASHA-দের জন্য ওষুধ রক্ষক
+          {t("appTagline", lang)}
         </p>
       </div>
 
@@ -130,15 +163,21 @@ export default function HomePage() {
         border: "1.5px solid var(--color-border)"
       }}>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-primary)" }}>{totalChecks}</div>
-          <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>মোট চেক</div>
+          <div style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-primary)" }}>
+            {formatNumber(totalChecks, lang)}
+          </div>
+          <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
+            {t("homeStatsTotalChecks", lang)}
+          </div>
         </div>
         <div style={{ width: 1, background: "var(--color-border)" }} />
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ fontSize: "1.5rem", fontWeight: 800, color: pendingSync > 0 ? "var(--color-warning)" : "var(--color-success)" }}>
-            {pendingSync}
+            {formatNumber(pendingSync, lang)}
           </div>
-          <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>সিঙ্ক বাকি</div>
+          <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
+            {t("homeStatsPendingSync", lang)}
+          </div>
         </div>
         <div style={{ flex: 1, textAlign: "center" }}>
           <button
@@ -146,7 +185,7 @@ export default function HomePage() {
             style={{ fontSize: "0.75rem", padding: "0.4rem 0.75rem", minHeight: 36 }}
             onClick={handleSync}
             disabled={syncing}
-            aria-label="Sync data"
+            aria-label={t("syncNow", lang)}
           >
             {syncing ? "⏳" : "🔄"} {t("syncNow", lang)}
           </button>
@@ -180,12 +219,14 @@ export default function HomePage() {
 
       {/* Settings section */}
       <div className="card" style={{ marginBottom: "1rem" }}>
-        <div className="section-title" style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>⚙️ সেটিংস</div>
+        <div className="section-title" style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>
+          {t("settingsTitle", lang)}
+        </div>
 
         {/* Font scale */}
         <div style={{ marginBottom: "1rem" }}>
           <label style={{ display: "block", fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.9rem" }}>
-            {t("fontScaleLabel", lang)}
+            {t("settingsFontScale", lang)}
           </label>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             {([100, 125, 150] as FontScale[]).map((scale) => (
@@ -202,17 +243,33 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Indic Numerals Setting */}
+        <div style={{ marginBottom: "1rem" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontWeight: 600, fontSize: "0.9rem" }}>
+            <input
+              type="checkbox"
+              checked={indicNums}
+              onChange={handleIndicToggle}
+              style={{ width: 18, height: 18 }}
+            />
+            <span>{t("settingsIndicNumerals", lang)}</span>
+          </label>
+        </div>
+
         {/* MO Phone */}
         <div style={{ marginBottom: "1rem" }}>
           <label htmlFor="mo-phone" style={{ display: "block", fontWeight: 600, marginBottom: "0.5rem", fontSize: "0.9rem" }}>
-            📞 MO ফোন নম্বর
+            📞 {t("settingsMOPhone", lang)}
           </label>
+          <p style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
+            {t("settingsMOPhoneHelp", lang)}
+          </p>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <input
               id="mo-phone"
               className="input"
               type="tel"
-              placeholder="+91 98765 43210"
+              placeholder={t("settingsMOPhonePlaceholder", lang)}
               value={moPhone}
               onChange={(e) => setMoPhoneState(e.target.value)}
               style={{ flex: 1 }}
@@ -235,7 +292,7 @@ export default function HomePage() {
               style={{ fontSize: "0.9rem" }}
               onClick={() => setShowDeleteConfirm(true)}
             >
-              🗑️ {t("deleteAll", lang)}
+              🗑️ {t("settingsDeleteData", lang)}
             </button>
           ) : (
             <div style={{ background: "#fef2f2", border: "2px solid var(--color-danger)", borderRadius: 10, padding: "1rem" }}>
@@ -261,6 +318,10 @@ export default function HomePage() {
       </div>
 
       <div style={{ textAlign: "center", marginTop: "1rem", marginBottom: "0.5rem" }}>
+        <Link href="/about/language-check" style={{ color: "var(--color-text-muted)", fontSize: "0.8rem" }}>
+          {t("aboutLanguageCheckLink", lang)}
+        </Link>
+        {" · "}
         <Link href="/evaluate" style={{ color: "var(--color-text-muted)", fontSize: "0.8rem" }}>
           {t("navEvaluate", lang)}
         </Link>

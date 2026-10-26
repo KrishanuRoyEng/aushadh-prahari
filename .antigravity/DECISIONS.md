@@ -50,29 +50,19 @@
 
 ## Authentication / PIN
 
-**D-024**: The review queue uses a simple 4-digit PIN stored as a bcrypt hash in localStorage. This is documented as NOT strong authentication; it is only a deterrent against accidental access. A full deployment should use server-side auth.  
+**D-024**: The review queue uses PBKDF2 Web Crypto authentication (HMAC-SHA-256, 100,000 iterations, unique device salt). Users establish their own 4–6 digit PIN on first run. No default PIN exists. Tracks failed attempts and enforces a 30-second lockout after 5 failures, plus a 5-minute inactivity auto-lock. This is documented as a device-level deterrent for shared tablets; clinical enterprise deployment requires server-side authentication.
 
-## Offline / PWA
+## Internationalisation & Language Consistency
 
-**D-025**: Service worker uses a cache-first strategy for the app shell and a stale-while-revalidate strategy for Open-Meteo weather data.  
-**D-026**: Outbox queue stores serialised check records in IndexedDB. On connectivity restoration, records are sent to `/api/sync` in batches of 10.  
+**D-035**: Single language switch controls the entire app across Bengali (`bn`), Hindi (`hi`), and English (`en`). Persistent in `localStorage` and synchronizes with Web Speech API recognition and synthesis. HTML is configured with `<html lang={lang} translate="no">` and `<meta name="google" content="notranslate" />` to prevent browser auto-translation interference. A dedicated audit page (`/about/language-check`) provides side-by-side verification, with loud failures (`[[key]]`) in development for missing keys.
 
-## Demo Data
+## Demo Mode & Walkthrough Engine
 
-**D-027**: Synthetic demo data is generated deterministically from a seed in `seed.ts`. The "SYNTHETIC DEMO DATA" banner is rendered in red and cannot be dismissed.  
-**D-028**: The dashboard allows toggling to real local data; that toggle reads from IndexedDB and performs no network request.  
+**D-036**: Demo mode toggle in the header and `/demo` page provides a completely isolated in-memory/localStorage store. Reads and writes in demo mode never modify real IndexedDB patient or check records. Provides a guided 6-step checklist with 1-tap launchers for presentations (language switch, illness check prefill, red-flag override, unknown brand escalation, PIN review, heat caseload metrics) and a 1-tap reset to clean state.
 
-## Evaluation Harness
+## Quality Assurance & Testing
 
-**D-029**: CSV import uses the Papa Parse library (client-side). No server upload; files are read locally.  
-**D-030**: Metrics (sensitivity, specificity, Cohen's kappa) are computed only from imported/entered data. The empty state says "No data yet — import a vignette CSV to begin."  
-
-## Accessibility
-
-**D-031**: Minimum touch target 48×48px enforced via CSS class `touch-target` (`min-h-[48px] min-w-[48px]`).  
-**D-032**: Font-size scaler at 100/125/150% stored in localStorage. Applied via `data-font-scale` attribute on `<html>`.  
-**D-033**: `prefers-reduced-motion` media query respected; animations disabled when set.  
-**D-034**: WCAG 2.2 AA is the target. Gaps are documented on `/about`; AAA is not claimed.  
+**D-037**: 110 Vitest tests (covering deterministic rules, banned wording lints, risk scoring, metrics, i18n dictionary completeness, JSX raw string scanner, and PBKDF2 PIN authentication) and 6 Playwright E2E browser tests (browser auto-translate prevention, dynamic language switches, language audit tables, PBKDF2 PIN setup/lockout, and full check-flow smoke test) pass with zero errors.
 
 ## What is NOT Validated (must be in README)
 
@@ -81,3 +71,4 @@
 - Risk score weights are arbitrary placeholders. No epidemiological data underlies them.  
 - AI (Gemini) accuracy for symptom parsing is unmeasured until the evaluation harness is run.  
 - Speech recognition accuracy varies by device; Bengali voices may be unavailable on many devices.  
+

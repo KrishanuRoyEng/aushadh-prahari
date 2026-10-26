@@ -129,6 +129,7 @@ export type ParsedSymptoms = z.infer<typeof ParsedSymptomsSchema>;
 export const BrandEntrySchema = z.object({
   brand: z.string().min(1),
   brandBn: z.string().optional(),
+  brandHi: z.string().optional(),
   salt: z.string().optional().default(""),
   genericSalt: z.string().optional(),
   classes: z.array(DrugClassSchema),
@@ -293,5 +294,8 @@ export const PendingReviewItemSchema = z.object({
   reviewedBy: z.string().optional(),
   reviewedAt: z.string().optional(),
   notes: z.string().optional(),
+  source: z.string().optional(),
+  submittedBy: z.string().optional(),
+  submittedAt: z.string().optional(),
 });
 export type PendingReviewItem = z.infer<typeof PendingReviewItemSchema>;

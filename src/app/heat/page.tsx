@@ -2,13 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { t, getLanguage, type Lang } from "@/lib/i18n";
+import { t, getLanguage, formatNumber, type Lang } from "@/lib/i18n";
 import { getAllPatients, getContactStatus, setContactStatus, savePatient } from "@/lib/db";
 import { computeRiskScore, RISK_WEIGHTS } from "@/lib/risk";
 import {
   fetchForecast,
   getStoredLocation,
-  setStoredLocation,
   buildManualForecast,
   type ForecastResult,
   type DayForecast,
@@ -41,6 +40,10 @@ export default function HeatwavePage() {
   useEffect(() => {
     setLang(getLanguage());
     loadWeather();
+
+    const handleLangChange = () => setLang(getLanguage());
+    window.addEventListener("ap-lang-change", handleLangChange);
+    return () => window.removeEventListener("ap-lang-change", handleLangChange);
   }, []);
 
   useEffect(() => {
@@ -55,8 +58,7 @@ export default function HeatwavePage() {
       const res = await fetchForecast(loc.lat, loc.lon, true);
       setForecast(res);
     } catch {
-      setWeatherError("আবহাওয়া সার্ভার অনুপলব্ধ। ম্যানুয়াল তাপমাত্রা লিখুন (Offline mode — enter manually).");
-      // Fallback to manual
+      setWeatherError(t("offlineMode", lang));
       const fallback = buildManualForecast(parseFloat(manualTemp) || 39, parseFloat(manualHumidity) || 65);
       setForecast(fallback);
     } finally {
@@ -76,7 +78,6 @@ export default function HeatwavePage() {
     let patients = await getAllPatients();
     let isDemo = false;
 
-    // If local patient store is empty, load demo patients for CHO demonstration
     if (patients.length === 0) {
       patients = DEMO_PATIENTS;
       isDemo = true;
@@ -98,7 +99,6 @@ export default function HeatwavePage() {
       });
     }
 
-    // Sort High to Low by risk points score
     items.sort((a, b) => b.risk.totalScore - a.risk.totalScore);
     setRankedList(items);
   }
@@ -132,16 +132,16 @@ export default function HeatwavePage() {
       {/* Disclaimer header */}
       <div style={{ marginBottom: "1rem" }}>
         <h1 style={{ fontSize: "1.3rem", fontWeight: 800, color: "var(--color-primary-dark)" }}>
-          🌡️ {t("homeHeatwave", lang)}
+          🌡️ {t("heatPageTitle", lang)}
         </h1>
         <p style={{ fontSize: "0.85rem", color: "var(--color-text-secondary)" }}>
-          তাপপ্রবাহের দিনে রোগীদের ঝুঁকিভিত্তিক অগ্রাধিকার তালিকা (Prioritisation aid for CHOs).
+          {t("heatPageSubtitle", lang)}
         </p>
       </div>
 
       {isDemoData && (
         <div className="synthetic-banner">
-          ⚠️ SYNTHETIC DEMO DATA — কৃত্রিম নমুনা রোগীর তথ্য প্রদর্শন করা হচ্ছে
+          {t("syntheticDataBanner", lang)}
         </div>
       )}
 
@@ -149,7 +149,7 @@ export default function HeatwavePage() {
       <div className="card" style={{ marginBottom: "1rem", background: "#f8fafc" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
           <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>
-            আবহাওয়া পূর্বাভাস (3-Day Weather Forecast):
+            {t("heatForecast", lang)}:
           </span>
           <button
             type="button"
@@ -158,7 +158,7 @@ export default function HeatwavePage() {
             onClick={loadWeather}
             disabled={loadingWeather}
           >
-            {loadingWeather ? "লোড হচ্ছে..." : "🔄 Refresh"}
+            {loadingWeather ? t("loading", lang) : "🔄 " + t("search", lang)}
           </button>
         </div>
 
@@ -198,7 +198,7 @@ export default function HeatwavePage() {
                   }}
                 >
                   <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-text-secondary)" }}>
-                    {idx === 0 ? "আজ (Today)" : idx === 1 ? "কাল (Tomorrow)" : "পরশু (Day 3)"}
+                    {idx === 0 ? t("heatForecastToday", lang) : idx === 1 ? t("heatForecastTomorrow", lang) : t("heatForecastDayAfter", lang)}
                   </div>
                   <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--color-danger)" }}>
                     {day.maxTempCelsius}°C
@@ -219,7 +219,7 @@ export default function HeatwavePage() {
                         fontWeight: 700,
                       }}
                     >
-                      HEAT DAY
+                      {t("heatDay", lang)}
                     </span>
                   )}
                 </button>
@@ -231,11 +231,11 @@ export default function HeatwavePage() {
         {/* Manual Weather Inputs Toggle */}
         <details style={{ fontSize: "0.85rem", marginTop: "0.5rem" }}>
           <summary style={{ cursor: "pointer", color: "var(--color-primary-light)", fontWeight: 600 }}>
-            ম্যানুয়াল তাপমাত্রা বা আর্দ্রতা পরিবর্তন করুন (Offline / Manual Entry)
+            {t("heatManualEntryTitle", lang)}
           </summary>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0.5rem", marginTop: "0.5rem" }}>
             <div>
-              <label style={{ fontSize: "0.75rem", fontWeight: 600 }}>সর্বোচ্চ তাপমাত্রা (°C)</label>
+              <label style={{ fontSize: "0.75rem", fontWeight: 600 }}>{t("heatManualTempLabel", lang)}</label>
               <input
                 type="number"
                 className="input"
@@ -245,7 +245,7 @@ export default function HeatwavePage() {
               />
             </div>
             <div>
-              <label style={{ fontSize: "0.75rem", fontWeight: 600 }}>আপেক্ষিক আর্দ্রতা (%)</label>
+              <label style={{ fontSize: "0.75rem", fontWeight: 600 }}>{t("heatManualHumidityLabel", lang)}</label>
               <input
                 type="number"
                 className="input"
@@ -261,7 +261,7 @@ export default function HeatwavePage() {
                 style={{ minHeight: 36, padding: "0.4rem 0.8rem", fontSize: "0.8rem" }}
                 onClick={handleApplyManualWeather}
               >
-                প্রয়োগ করুন
+                {t("confirm", lang)}
               </button>
             </div>
           </div>
@@ -285,12 +285,10 @@ export default function HeatwavePage() {
           <span style={{ fontSize: "1.8rem" }}>{selectedDay.isHeatDay ? "🔥" : "🌤️"}</span>
           <div>
             <div style={{ fontWeight: 800, fontSize: "1rem", color: selectedDay.isHeatDay ? "var(--color-danger-dark)" : "var(--color-primary-dark)" }}>
-              {selectedDay.isHeatDay
-                ? "তাপপ্রবাহ সতর্কতা দিন (Heatwave Day Declared)"
-                : "স্বাভাবিক তাপমাত্রা (Normal Weather)"}
+              {selectedDay.isHeatDay ? t("heatDay", lang) : t("notHeatDay", lang)}
             </div>
             <div style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>
-              তাপ সূচক (Heat Index): {selectedDay.heatIndex}°C · থ্রেশহোল্ড: {RISK_WEIGHTS.heatDayThresholdCelsius}°C (Unsigned placeholder).
+              {t("heatIndex", lang)}: {selectedDay.heatIndex}°C · {t("heatThresholdNote", lang)}
             </div>
           </div>
         </div>
@@ -299,7 +297,7 @@ export default function HeatwavePage() {
       {/* Caseload Risk Ranking List */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
         <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--color-text)" }}>
-          অগ্রাধিকার তালিকা (Priority Caseload Ranking) ({rankedList.length})
+          {t("heatCaseloadTitle", { count: rankedList.length }, lang)}
         </h2>
         {isDemoData && (
           <button
@@ -308,7 +306,7 @@ export default function HeatwavePage() {
             style={{ padding: "0.2rem 0.5rem", minHeight: 28, fontSize: "0.75rem" }}
             onClick={handleSeedDemoPatients}
           >
-            ডাটাবেসে সেভ করুন
+            {t("save", lang)}
           </button>
         )}
       </div>
@@ -348,13 +346,13 @@ export default function HeatwavePage() {
                         fontWeight: 700,
                       }}
                     >
-                      {idx + 1}
+                      {formatNumber(idx + 1, lang)}
                     </span>
                     <span style={{ fontWeight: 800, fontSize: "1rem", color: "var(--color-text)" }}>
                       {p.token}
                     </span>
                     <span style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
-                      ({p.ageBand})
+                      ({t(`ageBand${p.ageBand.charAt(0).toUpperCase() + p.ageBand.slice(1)}` as any, lang)})
                     </span>
                   </div>
 
@@ -362,27 +360,27 @@ export default function HeatwavePage() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "0.4rem" }}>
                     {(p.knownKidneyDisease || p.kidneyDisease) && (
                       <span className="badge badge-unsigned" style={{ fontSize: "0.7rem" }}>
-                        Kidney Disease
+                        {t("patientKnownKidney", lang)}
                       </span>
                     )}
                     {p.livesAlone && (
                       <span className="badge badge-unsigned" style={{ fontSize: "0.7rem" }}>
-                        Lives alone
+                        {t("patientLivesAlone", lang)}
                       </span>
                     )}
                     {p.worksOutdoors && (
                       <span className="badge badge-unsigned" style={{ fontSize: "0.7rem" }}>
-                        Works outdoors
+                        {t("patientWorksOutdoors", lang)}
                       </span>
                     )}
                     {p.pregnant && (
                       <span className="badge badge-unsigned" style={{ fontSize: "0.7rem" }}>
-                        Pregnant
+                        {t("patientPregnant", lang)}
                       </span>
                     )}
                     {hasFlags && (
                       <span className="badge badge-verified" style={{ fontSize: "0.7rem" }}>
-                        {medCount} Chronic Meds
+                        {p.chronicMedicines?.map((m) => m.brand).join(", ") || `${medCount} meds`}
                       </span>
                     )}
                   </div>
@@ -401,10 +399,7 @@ export default function HeatwavePage() {
                       display: "inline-block",
                     }}
                   >
-                    {item.risk.totalScore} pts
-                  </div>
-                  <div style={{ fontSize: "0.65rem", color: "var(--color-text-muted)", marginTop: "2px" }}>
-                    {item.risk.level.toUpperCase()} RISK
+                    {t("riskScore", { score: formatNumber(item.risk.totalScore, lang) }, lang)}
                   </div>
                 </div>
               </div>
@@ -435,7 +430,7 @@ export default function HeatwavePage() {
                       cursor: "pointer",
                     }}
                   >
-                    ✓ যোগাযোগ সম্পন্ন (Called)
+                    ✓ {t("called", lang)}
                   </button>
                   <button
                     type="button"
@@ -451,7 +446,7 @@ export default function HeatwavePage() {
                       cursor: "pointer",
                     }}
                   >
-                    ✕ পাওয়া যায়নি (Not Reached)
+                    ✕ {t("notReached", lang)}
                   </button>
                 </div>
 
@@ -468,7 +463,7 @@ export default function HeatwavePage() {
                       cursor: "pointer",
                     }}
                   >
-                    {isExpanded ? "▲ কেন এই স্কোর?" : "▼ কেন এই স্কোর? (Why?)"}
+                    {isExpanded ? `▲ ${t("whyClose", lang)}` : `▼ ${t("whyThisRank", lang)}`}
                   </button>
 
                   <Link
@@ -483,7 +478,7 @@ export default function HeatwavePage() {
                       textDecoration: "none",
                     }}
                   >
-                    চেক শুরু ➔
+                    {t("navCheck", lang)} ➔
                   </Link>
                 </div>
               </div>
@@ -501,17 +496,14 @@ export default function HeatwavePage() {
                   }}
                 >
                   <div style={{ fontWeight: 700, color: "var(--color-text-secondary)", marginBottom: "4px" }}>
-                    স্কোর ব্রেকডাউন (Score Breakdown):
+                    {t("whyThisRank", lang)}:
                   </div>
                   {item.risk.breakdown.map((b, i) => (
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                      <span>• {b.description} ({b.factor}):</span>
-                      <span style={{ fontWeight: 700, color: "var(--color-primary-dark)" }}>+{b.points} pts</span>
+                      <span>• {b.description}:</span>
+                      <span style={{ fontWeight: 700, color: "var(--color-primary-dark)" }}>+{formatNumber(b.points, lang)} pts</span>
                     </div>
                   ))}
-                  <div style={{ marginTop: "4px", fontSize: "0.7rem", color: "#6b7280", fontStyle: "italic" }}>
-                    {RISK_WEIGHTS.source}
-                  </div>
                 </div>
               )}
             </div>
@@ -521,7 +513,7 @@ export default function HeatwavePage() {
 
       {/* Safety Notice */}
       <div className="safety-disclaimer" style={{ marginTop: "1.5rem" }}>
-        অগ্রাধিকার তালিকা কেবল মাত্র কাজের অগ্রাধিকার নির্ধারণের জন্য। এটি কোনো চিকিৎসাগত সিদ্ধান্ত নয়।
+        🔒 {t("safetyDisclaimer", lang)}
       </div>
     </div>
   );

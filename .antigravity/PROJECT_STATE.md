@@ -59,3 +59,15 @@
 - [DONE] `npm run test` passes (95/95 tests passing)
 - [DONE] Playwright smoke test (`tests/smoke.spec.ts`)
 - [DONE] Mark all [DONE], launch summary
+
+## Step 9 — Language Consistency, PBKDF2 PIN Authentication & Demo Engine
+- [DONE] Language Consistency: `<html lang={lang} translate="no">`, `<meta name="google" content="notranslate" />`
+- [DONE] Dictionary Audit: all strings across `src/app` and `src/components` moved into `src/lib/i18n.ts` with `t(key, params)` interpolation and loud dev failure (`[[key]]`)
+- [DONE] Indic numerals formatting and `formatDate`, `formatTime`, `formatNumber`
+- [DONE] Language Audit Page: `/about/language-check` side-by-side string comparison table
+- [DONE] Vitest `src/lib/i18n.test.ts` (7 tests) and `tests/jsxStringsLint.test.ts` (2 tests)
+- [DONE] PIN Authentication: PBKDF2 Web Crypto (`src/lib/pinAuth.ts`), first-time setup, 30s lockout after 5 failures, 5-min inactivity lock, reviewer profile sign-offs
+- [DONE] Vitest `src/lib/pinAuth.test.ts` (6 tests)
+- [DONE] Demo Engine: `src/lib/demo.ts` with complete IndexedDB isolation, 8 patients, 3 illness scenarios, 20 vignettes, and 6-step guided walkthrough at `/demo`
+- [DONE] Playwright Tests: `tests/i18n.spec.ts` (4 tests), `tests/pinAuth.spec.ts` (1 test), `tests/smoke.spec.ts` (1 test) -> 6/6 passing
+- [DONE] Build Verification: `npm run build` compiles 0 errors, `npm run test` passes (110/110 tests passing)

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { t, getLanguage, type Lang } from "@/lib/i18n";
+import { t, getLanguage, formatDate, type Lang } from "@/lib/i18n";
 import {
   getAllPatients,
   savePatient,
@@ -12,7 +12,7 @@ import {
 } from "@/lib/db";
 import { generatePatientToken } from "@/lib/privacy";
 import type { Patient, AgeBand, DrugClass } from "@/lib/schemas";
-import { searchBrands, lookupBrand } from "@/lib/brands";
+import { searchBrands, getBrandDisplayName } from "@/lib/brands";
 import { DEMO_PATIENTS } from "@/lib/seed";
 
 export default function PatientsPage() {
@@ -45,6 +45,10 @@ export default function PatientsPage() {
   useEffect(() => {
     setLang(getLanguage());
     loadPatients();
+
+    const handleLangChange = () => setLang(getLanguage());
+    window.addEventListener("ap-lang-change", handleLangChange);
+    return () => window.removeEventListener("ap-lang-change", handleLangChange);
   }, []);
 
   async function loadPatients() {
@@ -102,7 +106,7 @@ export default function PatientsPage() {
   }
 
   async function handleDelete(token: string) {
-    if (confirm(`Are you sure you want to delete patient ${token}?`)) {
+    if (confirm(t("deleteConfirm", lang))) {
       await deletePatient(token);
       if (activePatient?.token === token) {
         setActivePatient(null);
@@ -130,10 +134,8 @@ export default function PatientsPage() {
     await loadPatients();
   }
 
-  // Filtered patients
   const filtered = patients.filter((p) => {
-    const matchesSearch = p.token.toLowerCase().includes(search.toLowerCase());
-    return matchesSearch;
+    return p.token.toLowerCase().includes(search.toLowerCase());
   });
 
   return (
@@ -144,11 +146,11 @@ export default function PatientsPage() {
             👥 {t("homePatients", lang)}
           </h1>
           <p style={{ fontSize: "0.85rem", color: "var(--color-text-secondary)" }}>
-            স্থানীয় সংরক্ষিত রোগীর তালিকা (Local Pseudonymous Patient Store).
+            {t("homePatientsSubtitle", lang)}
           </p>
         </div>
         <button className="btn btn-primary" onClick={handleOpenAddForm} style={{ fontSize: "0.85rem" }}>
-          ➕ নতুন রোগী (Add)
+          ➕ {t("patientAddTitle", lang)}
         </button>
       </div>
 
@@ -157,7 +159,7 @@ export default function PatientsPage() {
         <input
           type="text"
           className="input"
-          placeholder="রোগী টোকেন অনুসন্ধান করুন (Search by token)..."
+          placeholder={t("search", lang)}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -168,17 +170,14 @@ export default function PatientsPage() {
         <div className="card" style={{ textAlign: "center", padding: "2rem 1rem" }}>
           <div style={{ fontSize: "2.5rem", marginBottom: "0.5rem" }}>📋</div>
           <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--color-text)" }}>
-            কোনো রোগী সংরক্ষিত নেই (No Patients Stored)
+            {t("patientListEmpty", lang)}
           </h3>
-          <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)", marginTop: "0.5rem", marginBottom: "1.25rem" }}>
-            নতুন রোগী যোগ করতে পারেন অথবা পরীক্ষার জন্য ডেমো ডেটা লোড করতে পারেন।
-          </p>
-          <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: "0.75rem", marginTop: "1rem" }}>
             <button className="btn btn-primary" onClick={handleOpenAddForm}>
-              ➕ নতুন রোগী তৈরি করুন
+              ➕ {t("patientAddTitle", lang)}
             </button>
             <button className="btn btn-secondary" onClick={handleSeedDemo}>
-              🧪 নমুনা ডেমো রোগী লোড করুন
+              🧪 {t("homeDemo", lang)}
             </button>
           </div>
         </div>
@@ -189,31 +188,31 @@ export default function PatientsPage() {
         <div className="card" style={{ marginBottom: "1.5rem", border: "2px solid var(--color-primary)", background: "#f8fffb" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--color-primary-dark)" }}>
-              নতুন রোগী যোগ করুন (Add New Patient)
+              {t("patientAddTitle", lang)}
             </h3>
             <button
               className="btn btn-secondary"
               style={{ minHeight: 28, padding: "0.2rem 0.5rem", fontSize: "0.75rem" }}
               onClick={() => setShowAddForm(false)}
             >
-              ✕ বাতিল (Cancel)
+              ✕ {t("cancel", lang)}
             </button>
           </div>
 
           <div style={{ marginBottom: "0.75rem" }}>
-            <label style={{ fontSize: "0.8rem", fontWeight: 700 }}>রোগী টোকেন (Patient Token)</label>
+            <label style={{ fontSize: "0.8rem", fontWeight: 700 }}>{t("patientToken", lang)}</label>
             <input
               type="text"
               className="input"
               value={tokenInput}
               onChange={(e) => setTokenInput(e.target.value)}
-              placeholder="e.g. AP-10294"
+              placeholder={t("patientTokenPlaceholder", lang)}
             />
           </div>
 
           <div style={{ marginBottom: "0.75rem" }}>
             <label style={{ fontSize: "0.8rem", fontWeight: 700, display: "block", marginBottom: "0.3rem" }}>
-              বয়স গ্রুপ (Age Group)
+              {t("patientAgeBand", lang)}
             </label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem" }}>
               {(["child", "adult", "elderly"] as AgeBand[]).map((ab) => (
@@ -224,7 +223,9 @@ export default function PatientsPage() {
                   className={`btn ${ageBand === ab ? "btn-primary" : "btn-secondary"}`}
                   style={{ minHeight: 36, fontSize: "0.8rem" }}
                 >
-                  {ab === "child" ? "শিশু (<18)" : ab === "adult" ? "প্রাপ্তবয়স্ক (18-60)" : "বয়স্ক (>60)"}
+                  {ab === "child" && t("ageBandChild", lang)}
+                  {ab === "adult" && t("ageBandAdult", lang)}
+                  {ab === "elderly" && t("ageBandElderly", lang)}
                 </button>
               ))}
             </div>
@@ -234,43 +235,43 @@ export default function PatientsPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.75rem" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
               <input type="checkbox" checked={pregnant} onChange={(e) => setPregnant(e.target.checked)} />
-              গর্ভবতী (Pregnant)
+              {t("patientPregnant", lang)}
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
               <input type="checkbox" checked={kidneyDisease} onChange={(e) => setKidneyDisease(e.target.checked)} />
-              কিডনি রোগ (Kidney Disease)
+              {t("patientKidneyDisease", lang)}
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
               <input type="checkbox" checked={livesAlone} onChange={(e) => setLivesAlone(e.target.checked)} />
-              একা থাকেন (Lives Alone)
+              {t("patientLivesAlone", lang)}
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
               <input type="checkbox" checked={worksOutdoors} onChange={(e) => setWorksOutdoors(e.target.checked)} />
-              বাইরে কাজ করেন (Works Outdoors)
+              {t("patientWorksOutdoors", lang)}
             </label>
           </div>
 
           {kidneyDisease && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.75rem" }}>
               <div>
-                <label style={{ fontSize: "0.75rem", fontWeight: 600 }}>Creatinine (mg/dL)</label>
+                <label style={{ fontSize: "0.75rem", fontWeight: 600 }}>{t("patientCreatinine", lang)}</label>
                 <input
                   type="number"
                   step="0.1"
                   className="input"
                   value={creatinine}
                   onChange={(e) => setCreatinine(e.target.value)}
-                  placeholder="e.g. 1.8"
+                  placeholder="1.8"
                 />
               </div>
               <div>
-                <label style={{ fontSize: "0.75rem", fontWeight: 600 }}>eGFR</label>
+                <label style={{ fontSize: "0.75rem", fontWeight: 600 }}>{t("patientEGFR", lang)}</label>
                 <input
                   type="number"
                   className="input"
                   value={egfr}
                   onChange={(e) => setEgfr(e.target.value)}
-                  placeholder="e.g. 40"
+                  placeholder="40"
                 />
               </div>
             </div>
@@ -279,7 +280,7 @@ export default function PatientsPage() {
           {/* Medicines Selection for profile */}
           <div style={{ marginBottom: "0.75rem" }}>
             <label style={{ fontSize: "0.8rem", fontWeight: 700, display: "block", marginBottom: "0.3rem" }}>
-              নিয়মিত ওষুধ যোগ করুন (Chronic Medicines)
+              {t("patientMedicines", lang)}
             </label>
             <input
               type="text"
@@ -289,7 +290,7 @@ export default function PatientsPage() {
                 setMedQuery(e.target.value);
                 setMedSearchResults(e.target.value.trim() ? searchBrands(e.target.value) : []);
               }}
-              placeholder="ওষুধের নাম লিখুন (Search brand)..."
+              placeholder={t("searchMedicinePlaceholder", lang)}
             />
 
             {medSearchResults.length > 0 && (
@@ -299,8 +300,8 @@ export default function PatientsPage() {
                   borderRadius: 6,
                   maxHeight: 140,
                   overflowY: "auto",
+                  marginTop: "0.3rem",
                   background: "white",
-                  marginTop: "0.25rem",
                 }}
               >
                 {medSearchResults.map((b) => (
@@ -310,40 +311,38 @@ export default function PatientsPage() {
                     style={{
                       padding: "0.4rem 0.6rem",
                       borderBottom: "1px solid #f1f5f9",
-                      fontSize: "0.8rem",
                       cursor: "pointer",
-                      display: "flex",
-                      justifyContent: "space-between",
+                      fontSize: "0.85rem",
                     }}
                   >
-                    <span>{b.brand} ({b.classes.join(", ")})</span>
-                    <span style={{ color: "var(--color-primary-light)", fontWeight: 700 }}>+ Add</span>
+                    <strong>{getBrandDisplayName(b, lang)}</strong> · {b.classes.map((cls) => t(`drugClass_${cls}` as any, lang)).join(", ")}
                   </div>
                 ))}
               </div>
             )}
 
+            {/* Selected Meds badges */}
             {selectedMeds.length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", marginTop: "0.4rem" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", marginTop: "0.5rem" }}>
                 {selectedMeds.map((m, idx) => (
                   <span
-                    key={idx}
+                    key={`${m.brand}-${idx}`}
                     style={{
-                      background: "#d1fae5",
-                      border: "1px solid #6ee7b7",
-                      padding: "0.2rem 0.5rem",
+                      background: "#e0f2fe",
+                      color: "#0369a1",
                       borderRadius: 6,
-                      fontSize: "0.75rem",
-                      display: "inline-flex",
+                      padding: "0.2rem 0.5rem",
+                      fontSize: "0.8rem",
+                      display: "flex",
                       alignItems: "center",
-                      gap: "4px",
+                      gap: "0.4rem",
                     }}
                   >
-                    {m.brand}
+                    {getBrandDisplayName(m.brand, lang)}
                     <button
                       type="button"
                       onClick={() => handleRemoveMed(idx)}
-                      style={{ border: "none", background: "none", cursor: "pointer", fontWeight: 700 }}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "#0369a1", fontWeight: 700 }}
                     >
                       ✕
                     </button>
@@ -354,129 +353,159 @@ export default function PatientsPage() {
           </div>
 
           <button className="btn btn-primary btn-full" onClick={handleSaveNewPatient}>
-            সংরক্ষণ করুন (Save Patient) ✓
+            {t("save", lang)}
           </button>
         </div>
       )}
 
       {/* Patient List */}
       <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-        {filtered.map((p) => (
-          <div key={p.token} className="card" style={{ borderLeft: "4px solid var(--color-primary)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <span style={{ fontSize: "1.05rem", fontWeight: 800, color: "var(--color-text)" }}>
-                    {p.token}
-                  </span>
-                  <span style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>
-                    ({p.ageBand === "child" ? "শিশু" : p.ageBand === "adult" ? "প্রাপ্তবয়স্ক" : "বয়স্ক"})
-                  </span>
+        {filtered.map((p) => {
+          const medCount = p.chronicMedicines?.length ?? 0;
+          return (
+            <div
+              key={p.token}
+              className="card"
+              style={{
+                border: "1.5px solid var(--color-border)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.5rem",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontWeight: 800, fontSize: "1.05rem", color: "var(--color-primary-dark)" }}>
+                      {p.token}
+                    </span>
+                    <span style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>
+                      ({t(`ageBand${p.ageBand.charAt(0).toUpperCase() + p.ageBand.slice(1)}` as any, lang)})
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "0.3rem" }}>
+                    {(p.knownKidneyDisease || p.kidneyDisease) && (
+                      <span className="badge badge-unsigned" style={{ fontSize: "0.7rem" }}>
+                        {t("patientKnownKidney", lang)}
+                      </span>
+                    )}
+                    {p.livesAlone && (
+                      <span className="badge badge-unsigned" style={{ fontSize: "0.7rem" }}>
+                        {t("patientLivesAlone", lang)}
+                      </span>
+                    )}
+                    {p.worksOutdoors && (
+                      <span className="badge badge-unsigned" style={{ fontSize: "0.7rem" }}>
+                        {t("patientWorksOutdoors", lang)}
+                      </span>
+                    )}
+                    {p.pregnant && (
+                      <span className="badge badge-unsigned" style={{ fontSize: "0.7rem" }}>
+                        {t("patientPregnant", lang)}
+                      </span>
+                    )}
+                    {medCount > 0 && (
+                      <span className="badge badge-verified" style={{ fontSize: "0.7rem" }}>
+                        {p.chronicMedicines?.map((m) => m.brand).join(", ")}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "0.3rem" }}>
-                  {(p.knownKidneyDisease || p.kidneyDisease) && <span className="badge badge-unsigned">Kidney Disease</span>}
-                  {p.pregnant && <span className="badge badge-unsigned">Pregnant</span>}
-                  {p.livesAlone && <span className="badge badge-unsigned">Lives alone</span>}
-                  {p.worksOutdoors && <span className="badge badge-unsigned">Works outdoors</span>}
-                </div>
-
-                {p.chronicMedicines && p.chronicMedicines.length > 0 ? (
-                  <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "0.4rem" }}>
-                    ওষুধ: {p.chronicMedicines.map((m: { brand: string }) => m.brand).join(", ")}
-                  </div>
-                ) : p.medicines && p.medicines.length > 0 ? (
-                  <div style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "0.4rem" }}>
-                    ওষুধ: {p.medicines.join(", ")}
-                  </div>
-                ) : null}
-              </div>
-
-              <div style={{ display: "flex", gap: "0.4rem" }}>
-                <Link
-                  href={`/check?token=${p.token}`}
-                  className="btn btn-primary"
-                  style={{ minHeight: 32, padding: "0.2rem 0.6rem", fontSize: "0.75rem" }}
-                >
-                  🩺 চেক (Check)
-                </Link>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  style={{ minHeight: 32, padding: "0.2rem 0.6rem", fontSize: "0.75rem" }}
-                  onClick={() => handleViewHistory(p)}
-                >
-                  📜 ইতিহাস (History)
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  style={{ minHeight: 32, padding: "0.2rem 0.4rem", fontSize: "0.75rem" }}
-                  onClick={() => handleDelete(p.token)}
-                >
-                  🗑️
-                </button>
-              </div>
-            </div>
-
-            {/* Check history drawer for active patient */}
-            {activePatient?.token === p.token && (
-              <div
-                style={{
-                  marginTop: "0.75rem",
-                  paddingTop: "0.75rem",
-                  borderTop: "1px dashed var(--color-border)",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                  <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--color-primary-dark)" }}>
-                    চেক ইতিহাস (Past Checks for {p.token}):
-                  </span>
+                <div style={{ display: "flex", gap: "0.4rem" }}>
                   <button
-                    onClick={() => setActivePatient(null)}
-                    style={{ border: "none", background: "none", color: "var(--color-text-muted)", cursor: "pointer", fontSize: "0.75rem" }}
+                    className="btn btn-secondary"
+                    style={{ minHeight: 32, padding: "0.2rem 0.6rem", fontSize: "0.75rem" }}
+                    onClick={() => handleViewHistory(p)}
                   >
-                    বন্ধ করুন ✕
+                    📋 {t("patientHistory", lang)}
+                  </button>
+                  <Link
+                    href={`/check?token=${p.token}`}
+                    className="btn btn-primary"
+                    style={{ minHeight: 32, padding: "0.2rem 0.6rem", fontSize: "0.75rem", textDecoration: "none" }}
+                  >
+                    🩺 {t("navCheck", lang)}
+                  </Link>
+                  <button
+                    className="btn btn-danger"
+                    style={{ minHeight: 32, padding: "0.2rem 0.4rem", fontSize: "0.75rem" }}
+                    onClick={() => handleDelete(p.token)}
+                    title={t("delete", lang)}
+                  >
+                    🗑️
                   </button>
                 </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-                {loadingChecks ? (
-                  <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)" }}>লোড হচ্ছে...</p>
-                ) : patientChecks.length === 0 ? (
-                  <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", fontStyle: "italic" }}>
-                    এই রোগীর জন্য কোনো পূর্ববর্তী চেক রেকর্ড নেই।
-                  </p>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-                    {patientChecks.map((chk) => (
-                      <div
-                        key={chk.id}
+      {/* Patient Past Checks History Drawer/Modal */}
+      {activePatient && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+          padding: "1rem",
+        }}>
+          <div className="card" style={{ maxWidth: 500, width: "100%", maxHeight: "80vh", overflowY: "auto", background: "white" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 800, color: "var(--color-primary-dark)" }}>
+                {activePatient.token} — {t("patientHistory", lang)}
+              </h3>
+              <button
+                className="btn btn-secondary"
+                style={{ minHeight: 28, padding: "0.2rem 0.5rem", fontSize: "0.75rem" }}
+                onClick={() => setActivePatient(null)}
+              >
+                ✕ {t("close", lang)}
+              </button>
+            </div>
+
+            {loadingChecks ? (
+              <p>{t("loading", lang)}</p>
+            ) : patientChecks.length === 0 ? (
+              <p style={{ color: "var(--color-text-muted)", fontStyle: "italic" }}>
+                {t("none", lang)}
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {patientChecks.map((chk) => (
+                  <div key={chk.id} style={{ padding: "0.75rem", borderRadius: 8, border: "1px solid var(--color-border)", background: "#f8fafc" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.25rem" }}>
+                      <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
+                        {formatDate(chk.createdAt, lang)}
+                      </span>
+                      <span
                         style={{
-                          padding: "0.5rem",
-                          borderRadius: 6,
-                          background: chk.result.urgency === "GO_TO_HEALTH_FACILITY_NOW" ? "#fee2e2" : "#f0fdf4",
-                          border: "1px solid #e2e8f0",
-                          fontSize: "0.75rem",
+                          fontSize: "0.7rem",
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          background: chk.result.urgency === "GO_TO_HEALTH_FACILITY_NOW" ? "#fee2e2" : chk.result.urgency === "ASK_DOCTOR_TODAY" ? "#fef3c7" : "#d1fae5",
+                          color: chk.result.urgency === "GO_TO_HEALTH_FACILITY_NOW" ? "#991b1b" : chk.result.urgency === "ASK_DOCTOR_TODAY" ? "#92400e" : "#065f46",
                         }}
                       >
-                        <div style={{ display: "flex", justifyContent: "space-between" }}>
-                          <span style={{ fontWeight: 700 }}>
-                            {new Date(chk.createdAt).toLocaleDateString()} {new Date(chk.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                          <span style={{ fontWeight: 700 }}>{chk.result.urgency}</span>
-                        </div>
-                        <div style={{ color: "var(--color-text-secondary)", marginTop: "2px" }}>
-                          লক্ষণ: {chk.input.symptoms.symptoms.value.join(", ")}
-                        </div>
-                      </div>
-                    ))}
+                        {chk.result.urgency}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                      {chk.input.brands?.join(", ") || t("none", lang)}
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
             )}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

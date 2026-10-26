@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { t, getLanguage, type Lang } from "@/lib/i18n";
+import { t, getLanguage, formatNumber, type Lang } from "@/lib/i18n";
 import {
   computeBinaryMetrics,
   computeInterRaterKappa,
@@ -17,17 +17,7 @@ import {
 } from "@/lib/metrics";
 import { evaluate } from "@/lib/rules";
 import type { CheckInput, DrugClass, IllnessSymptom, AgeBand } from "@/lib/schemas";
-
-// Sample CSV template for vignettes
-const SAMPLE_VIGNETTES_CSV = `case_id,age_band,pregnant,kidney_disease,symptoms,medicines,reviewer_1,reviewer_2,reviewer_3
-VIG-01,elderly,no,yes,loose_motions;fever,Envas (ace_inhibitor);Glycomet (metformin),yes,yes,yes
-VIG-02,adult,no,no,none,Amlodipine (other),no,no,no
-VIG-03,adult,no,no,vomiting;loose_motions,Lasix (diuretic_loop),yes,yes,yes
-VIG-04,elderly,no,no,none,Brufen (nsaid),no,no,no
-VIG-05,child,no,no,fever;loose_motions,Brufen (nsaid),yes,yes,yes
-VIG-06,adult,yes,no,fever,Paracetamol (other),yes,yes,yes
-VIG-07,elderly,no,yes,very_hot_weather,Forxiga (sglt2_inhibitor),yes,yes,yes
-VIG-08,adult,no,no,loose_motions,unknown_tablet (unknown),yes,yes,no`;
+import { getDemoStore, generateInitialDemoStore } from "@/lib/demo";
 
 export default function EvaluatePage() {
   const [lang, setLang] = useState<Lang>("bn");
@@ -35,6 +25,7 @@ export default function EvaluatePage() {
 
   // Vignette state
   const [vignetteCsv, setVignetteCsv] = useState<string>("");
+  const [isDemoVignettes, setIsDemoVignettes] = useState<boolean>(false);
   const [vignetteMetrics, setVignetteMetrics] = useState<BinaryMetrics | null>(null);
   const [raterKappas, setRaterKappas] = useState<{
     appVsR1: number | null;
@@ -67,7 +58,20 @@ export default function EvaluatePage() {
 
   useEffect(() => {
     setLang(getLanguage());
+    // Auto-load demo vignettes on first render for presentation readiness
+    handleLoadDemoVignettes();
+
+    const handleLangChange = () => setLang(getLanguage());
+    window.addEventListener("ap-lang-change", handleLangChange);
+    return () => window.removeEventListener("ap-lang-change", handleLangChange);
   }, []);
+
+  function handleLoadDemoVignettes() {
+    const store = getDemoStore() || generateInitialDemoStore();
+    setVignetteCsv(store.vignettesCSV);
+    setIsDemoVignettes(true);
+    runVignetteEvaluation(store.vignettesCSV);
+  }
 
   // ─── Vignettes Parser & Runner ─────────────────────────────────────────────
   function runVignetteEvaluation(csvText: string) {
@@ -93,107 +97,114 @@ export default function EvaluatePage() {
         rowObj[h] = cols[idx] ?? "";
       });
 
-      const caseId = rowObj["case_id"] || `VIG-${i}`;
-      const ageBand = (rowObj["age_band"] || "adult") as AgeBand;
-      const pregnant = rowObj["pregnant"]?.toLowerCase() === "yes";
-      const kidneyDisease = rowObj["kidney_disease"]?.toLowerCase() === "yes";
+      const caseId = rowObj["vignette_id"] || rowObj["case_id"] || `VIG-${i}`;
+      const ageBand = (rowObj["patient_age_band"] || rowObj["age_band"] || "adult") as AgeBand;
+      const pregnant = (rowObj["pregnant"] || "").toLowerCase() === "yes" || (rowObj["illness"] || "").includes("pregnant");
+      const kidneyDisease = (rowObj["kidney_disease"] || "").toLowerCase() === "yes";
 
       // Parse symptoms
-      const symList = (rowObj["symptoms"] || "none")
-        .split(";")
-        .map((s) => s.trim()) as IllnessSymptom[];
+      const illnessCol = (rowObj["illness"] || rowObj["symptoms"] || "none").toLowerCase();
+      const symptomsList: IllnessSymptom[] = [];
+      if (illnessCol.includes("loose_motions")) symptomsList.push("loose_motions");
+      if (illnessCol.includes("vomiting")) symptomsList.push("vomiting");
+      if (illnessCol.includes("fever")) symptomsList.push("fever");
+      if (illnessCol.includes("not_eating")) symptomsList.push("not_eating_drinking");
+      if (illnessCol.includes("hot_weather") || illnessCol.includes("very_hot_weather")) symptomsList.push("very_hot_weather");
+      if (symptomsList.length === 0) symptomsList.push("none");
+
+      // Check red flags
+      const noUrine = illnessCol.includes("no_urine_8h") || illnessCol.includes("anuria");
+      const dizzy = illnessCol.includes("dizziness");
+      const confusion = illnessCol.includes("confusion");
+      const chestPain = illnessCol.includes("chest_pain");
 
       // Parse medicines
-      const medList = (rowObj["medicines"] || "").split(";").map((mStr) => {
-        const match = mStr.match(/(.+)\s*\((.+)\)/);
-        if (match) {
-          return {
-            brand: match[1].trim(),
-            classes: [match[2].trim() as DrugClass],
-            signedOff: false,
-          };
-        }
-        return {
-          brand: mStr.trim() || "Unknown",
-          classes: ["unknown" as DrugClass],
-          signedOff: false,
-        };
-      });
+      const brand = rowObj["brand_name"] || rowObj["medicines"] || "Paracetamol";
+      const drugClass = (rowObj["class"] || "other") as DrugClass;
 
-      // Construct CheckInput and run pure rule engine
       const checkInput: CheckInput = {
         patient: {
           token: caseId,
           ageBand,
           pregnant,
-          kidneyDisease,
-          medicines: medList.map((m) => m.brand),
-          chronicMedicines: medList.map((m) => ({ brand: m.brand, classes: m.classes, dose: "" })),
+          knownKidneyDisease: kidneyDisease,
           createdAt: new Date().toISOString(),
         },
         symptoms: {
-          symptoms: { value: symList, confidence: 1 },
-          durationDays: { value: 1, confidence: 1 },
+          symptoms: { value: symptomsList, confidence: 1 },
+          durationDays: { value: 2, confidence: 1 },
           ableToDrinkFluids: { value: true, confidence: 1 },
-          urinePastEightHours: { value: true, confidence: 1 },
-          dizziness: { value: false, confidence: 1 },
-          confusion: { value: false, confidence: 1 },
+          urinePastEightHours: { value: !noUrine, confidence: 1 },
+          dizziness: { value: dizzy, confidence: 1 },
+          confusion: { value: confusion, confidence: 1 },
           bloodInStool: { value: false, confidence: 1 },
-          chestPain: { value: false, confidence: 1 },
+          chestPain: { value: chestPain, confidence: 1 },
           cannotKeepFluids: { value: false, confidence: 1 },
         },
-        brands: medList.map((m) => m.brand),
-        isHeatDay: symList.includes("very_hot_weather"),
+        brands: [brand],
+        isHeatDay: symptomsList.includes("very_hot_weather"),
         timestamp: new Date().toISOString(),
       };
 
       const result = evaluate(checkInput);
-      const appFlag: BinaryLabel =
-        result.urgency === "GO_TO_HEALTH_FACILITY_NOW" ||
-        result.urgency === "ASK_DOCTOR_TODAY"
-          ? "yes"
-          : "no";
+      const appFlag: BinaryLabel = result.urgency === "NO_FLAG" ? "no" : "yes";
 
-      const r1: BinaryLabel = rowObj["reviewer_1"]?.toLowerCase() === "yes" ? "yes" : "no";
-      const r2: BinaryLabel = rowObj["reviewer_2"]?.toLowerCase() === "yes" ? "yes" : "no";
-      const r3: BinaryLabel = rowObj["reviewer_3"]?.toLowerCase() === "yes" ? "yes" : "no";
+      const r1Raw = (rowObj["reviewer_1_flag"] || rowObj["reviewer_1"] || "NO_FLAG").toUpperCase();
+      const r2Raw = (rowObj["reviewer_2_flag"] || rowObj["reviewer_2"] || "NO_FLAG").toUpperCase();
+      const r3Raw = (rowObj["reviewer_3_flag"] || rowObj["reviewer_3"] || "NO_FLAG").toUpperCase();
+
+      const r1: BinaryLabel = r1Raw === "NO_FLAG" || r1Raw === "NO" ? "no" : "yes";
+      const r2: BinaryLabel = r2Raw === "NO_FLAG" || r2Raw === "NO" ? "no" : "yes";
+      const r3: BinaryLabel = r3Raw === "NO_FLAG" || r3Raw === "NO" ? "no" : "yes";
 
       const majority = majorityLabel([r1, r2, r3]);
 
       predictions.push({ id: caseId, predicted: appFlag, actual: majority });
-      appList.push(appFlag);
       r1List.push(r1);
       r2List.push(r2);
       r3List.push(r3);
+      appList.push(appFlag);
 
-      rows.push({ id: caseId, appFlag, majorityActual: majority, r1, r2, r3 });
+      rows.push({
+        id: caseId,
+        appFlag,
+        majorityActual: majority,
+        r1,
+        r2,
+        r3,
+      });
     }
 
     const metrics = computeBinaryMetrics(predictions);
     setVignetteMetrics(metrics);
     setEvaluationRows(rows);
 
-    // Compute Cohen's kappa
-    const appVsR1 = computeInterRaterKappa(appList.map((a, idx) => ({ labelA: a, labelB: r1List[idx] }))).kappa;
-    const appVsR2 = computeInterRaterKappa(appList.map((a, idx) => ({ labelA: a, labelB: r2List[idx] }))).kappa;
-    const appVsR3 = computeInterRaterKappa(appList.map((a, idx) => ({ labelA: a, labelB: r3List[idx] }))).kappa;
-    const interRater = computeInterRaterKappa(r1List.map((r, idx) => ({ labelA: r, labelB: r2List[idx] }))).kappa;
+    const pairsAppVsR1 = appList.map((a, i) => ({ labelA: a, labelB: r1List[i] }));
+    const pairsAppVsR2 = appList.map((a, i) => ({ labelA: a, labelB: r2List[i] }));
+    const pairsAppVsR3 = appList.map((a, i) => ({ labelA: a, labelB: r3List[i] }));
+    const pairsInterRater = r1List.map((r, i) => ({ labelA: r, labelB: r2List[i] }));
 
-    setRaterKappas({ appVsR1, appVsR2, appVsR3, interRater });
-  }
+    const kAppVsR1 = computeInterRaterKappa(pairsAppVsR1).kappa;
+    const kAppVsR2 = computeInterRaterKappa(pairsAppVsR2).kappa;
+    const kAppVsR3 = computeInterRaterKappa(pairsAppVsR3).kappa;
+    const kInterRater = computeInterRaterKappa(pairsInterRater).kappa;
 
-  function handleLoadTemplate() {
-    setVignetteCsv(SAMPLE_VIGNETTES_CSV);
-    runVignetteEvaluation(SAMPLE_VIGNETTES_CSV);
+    setRaterKappas({
+      appVsR1: kAppVsR1,
+      appVsR2: kAppVsR2,
+      appVsR3: kAppVsR3,
+      interRater: kInterRater,
+    });
   }
 
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
+    reader.onload = (evt) => {
+      const text = evt.target?.result as string;
       setVignetteCsv(text);
+      setIsDemoVignettes(false);
       runVignetteEvaluation(text);
     };
     reader.readAsText(file);
@@ -289,10 +300,10 @@ export default function EvaluatePage() {
       {/* Header */}
       <div style={{ marginBottom: "1rem" }}>
         <h1 style={{ fontSize: "1.3rem", fontWeight: 800, color: "var(--color-primary-dark)" }}>
-          📊 {t("navEvaluate", lang)} — Evaluation Harness
+          📊 {t("evaluatePageTitle", lang)}
         </h1>
         <p style={{ fontSize: "0.85rem", color: "var(--color-text-secondary)" }}>
-          ক্লিনিক্যাল ভিনিয়েট, ব্র্যান্ড ম্যাপিং এবং স্পিচ পার্সিং পারফরম্যান্স মূল্যায়ন (Safety & Accuracy Validation).
+          {t("evaluatePageSubtitle", lang)}
         </p>
       </div>
 
@@ -304,7 +315,7 @@ export default function EvaluatePage() {
           className={`btn ${activeTab === "vignettes" ? "btn-primary" : "btn-secondary"}`}
           style={{ fontSize: "0.85rem", padding: "0.4rem" }}
         >
-          📄 ভিনিয়েট টেস্ট (Vignettes)
+          📄 {t("importVignettes", lang)}
         </button>
         <button
           type="button"
@@ -312,7 +323,7 @@ export default function EvaluatePage() {
           className={`btn ${activeTab === "brands" ? "btn-primary" : "btn-secondary"}`}
           style={{ fontSize: "0.85rem", padding: "0.4rem" }}
         >
-          💊 ব্র্যান্ড ম্যাপিং (Brands)
+          💊 {t("reviewTabBrands", { count: "" }, lang).trim()}
         </button>
         <button
           type="button"
@@ -320,7 +331,7 @@ export default function EvaluatePage() {
           className={`btn ${activeTab === "speech" ? "btn-primary" : "btn-secondary"}`}
           style={{ fontSize: "0.85rem", padding: "0.4rem" }}
         >
-          🎙️ ভয়েস নির্ভুলতা (Speech)
+          🎙️ {t("stepSymptomsMicPrompt", lang)}
         </button>
       </div>
 
@@ -328,24 +339,24 @@ export default function EvaluatePage() {
       {activeTab === "vignettes" && (
         <div>
           <div className="card" style={{ marginBottom: "1rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", flexWrap: "wrap", gap: "0.5rem" }}>
               <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>
-                ক্লিনিক্যাল ভিনিয়েট CSV আপলোড (Upload Vignette CSV):
+                {t("importVignettes", lang)}:
               </span>
               <div style={{ display: "flex", gap: "0.4rem" }}>
                 <button
                   type="button"
                   className="btn btn-secondary"
                   style={{ minHeight: 28, padding: "0.2rem 0.5rem", fontSize: "0.75rem" }}
-                  onClick={handleLoadTemplate}
+                  onClick={handleLoadDemoVignettes}
                 >
-                  🧪 নমুনা টেমপ্লেট লোড করুন (Sample CSV)
+                  🧪 {t("loadDemoVignettesBtn", lang)}
                 </button>
                 <label
                   className="btn btn-primary"
                   style={{ minHeight: 28, padding: "0.2rem 0.5rem", fontSize: "0.75rem", cursor: "pointer" }}
                 >
-                  📁 CSV ফাইল আপলোড
+                  📁 CSV
                   <input type="file" accept=".csv" onChange={handleFileUpload} style={{ display: "none" }} />
                 </label>
               </div>
@@ -357,21 +368,50 @@ export default function EvaluatePage() {
               value={vignetteCsv}
               onChange={(e) => {
                 setVignetteCsv(e.target.value);
+                setIsDemoVignettes(false);
                 runVignetteEvaluation(e.target.value);
               }}
-              placeholder="Paste or upload CSV with columns: case_id, age_band, pregnant, kidney_disease, symptoms, medicines, reviewer_1, reviewer_2, reviewer_3..."
+              placeholder="vignette_id, patient_age_band, illness, brand_name, class, reviewer_1_flag, reviewer_2_flag, reviewer_3_flag, gold_flag, model_flag..."
               style={{ fontFamily: "monospace", fontSize: "0.75rem" }}
             />
           </div>
 
-          {/* Non-negotiable rule #5 empty state */}
+          {/* Persistent badge when computed from demo vignettes */}
+          {isDemoVignettes && vignetteMetrics && (
+            <div
+              style={{
+                background: "#f0fdf4",
+                border: "1.5px solid #86efac",
+                color: "#166534",
+                padding: "0.5rem 0.75rem",
+                borderRadius: 8,
+                fontSize: "0.85rem",
+                fontWeight: 700,
+                marginBottom: "1rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+              }}
+            >
+              <span>🧪</span>
+              <span>{t("demoVignettesComputed", lang)}</span>
+            </div>
+          )}
+
           {!vignetteMetrics ? (
             <div className="card" style={{ textAlign: "center", padding: "2rem" }}>
               <span style={{ fontSize: "2rem" }}>📊</span>
-              <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginTop: "0.5rem" }}>No data yet.</h3>
-              <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>
-                মূল্যায়ন মেট্রিক্স কেবলমাত্র আপনার আপলোড করা ডেটা থেকেই হিসাব করা হয়। ওপরের "নমুনা টেমপ্লেট লোড করুন" বোতাম চাপুন।
+              <p style={{ fontSize: "0.9rem", color: "var(--color-text-muted)", marginTop: "0.5rem" }}>
+                {t("noDataYet", lang)}
               </p>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ marginTop: "1rem", fontSize: "0.85rem" }}
+                onClick={handleLoadDemoVignettes}
+              >
+                🧪 {t("loadDemoVignettesBtn", lang)}
+              </button>
             </div>
           ) : (
             <div>
@@ -379,7 +419,7 @@ export default function EvaluatePage() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "1rem" }}>
                 <div className="card" style={{ borderLeft: "4px solid var(--color-primary)" }}>
                   <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", fontWeight: 700 }}>
-                    SENSITIVITY (RECALL)
+                    {t("sensitivityLabel", lang)}
                   </div>
                   <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "var(--color-primary-dark)" }}>
                     {formatMetricPercent(vignetteMetrics.sensitivity)}
@@ -392,7 +432,7 @@ export default function EvaluatePage() {
 
                 <div className="card" style={{ borderLeft: "4px solid #10b981" }}>
                   <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", fontWeight: 700 }}>
-                    SPECIFICITY
+                    {t("specificityLabel", lang)}
                   </div>
                   <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#065f46" }}>
                     {formatMetricPercent(vignetteMetrics.specificity)}
@@ -403,128 +443,115 @@ export default function EvaluatePage() {
                   </div>
                 </div>
 
-                <div className="card" style={{ borderLeft: "4px solid #3b82f6" }}>
+                <div className="card" style={{ borderLeft: "4px solid #f59e0b" }}>
                   <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", fontWeight: 700 }}>
-                    OVERALL ACCURACY
+                    {t("ppvLabel", lang)}
                   </div>
-                  <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#1e40af" }}>
-                    {formatMetricPercent(vignetteMetrics.accuracy)}
+                  <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#b45309" }}>
+                    {formatMetricPercent(vignetteMetrics.ppv)}
                   </div>
                   <div style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>
-                    N = {vignetteMetrics.n} cases evaluated
+                    TP: {vignetteMetrics.confusionMatrix.tp} / (TP+FP:{" "}
+                    {vignetteMetrics.confusionMatrix.tp + vignetteMetrics.confusionMatrix.fp})
                   </div>
                 </div>
 
-                <div className="card" style={{ borderLeft: "4px solid #7c3aed" }}>
+                <div className="card" style={{ borderLeft: "4px solid #8b5cf6" }}>
                   <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", fontWeight: 700 }}>
-                    COHEN'S KAPPA (App vs Majority)
+                    {t("kappaLabel", lang)}
                   </div>
-                  <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#5b21b6" }}>
-                    {vignetteMetrics.kappa != null ? vignetteMetrics.kappa.toFixed(3) : "N/A"}
+                  <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#6d28d9" }}>
+                    {raterKappas?.appVsR1 !== null && raterKappas?.appVsR1 !== undefined
+                      ? raterKappas.appVsR1.toFixed(3)
+                      : "—"}
                   </div>
                   <div style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>
-                    Inter-rater: {raterKappas?.interRater != null ? raterKappas.interRater.toFixed(3) : "N/A"}
+                    Inter-Rater: {raterKappas?.interRater?.toFixed(3) ?? "—"}
                   </div>
                 </div>
               </div>
 
-              {/* Missed Urgent Cases Alert (Rule #6 critical) */}
-              {vignetteMetrics.missedUrgentCases.length > 0 ? (
-                <div
-                  style={{
-                    background: "#fef2f2",
-                    border: "2px solid var(--color-danger)",
-                    borderRadius: "var(--radius)",
-                    padding: "0.75rem 1rem",
-                    marginBottom: "1rem",
-                  }}
-                >
-                  <div style={{ fontWeight: 800, color: "var(--color-danger-dark)", fontSize: "0.95rem" }}>
-                    🚨 MISSED URGENT CASES ({vignetteMetrics.missedUrgentCases.length}):
-                  </div>
-                  <p style={{ fontSize: "0.8rem", color: "#991b1b", marginTop: "2px" }}>
-                    এগুলি হল False Negatives (FN), যেখানে পর্যালোচকগণ রেফারেল চিহ্নিত করেছিলেন কিন্তু ইঞ্জিন পতাকাঙ্কিত করেনি:
-                  </p>
-                  <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem" }}>
-                    {vignetteMetrics.missedUrgentCases.map((id) => (
-                      <span
-                        key={id}
-                        style={{
-                          background: "white",
-                          border: "1px solid #f87171",
-                          padding: "2px 6px",
-                          borderRadius: 4,
-                          fontWeight: 700,
-                          fontSize: "0.75rem",
-                          color: "#b91c1c",
-                        }}
-                      >
-                        {id}
-                      </span>
-                    ))}
+              {/* Missed Urgent Cases Banner */}
+              <div
+                style={{
+                  background: vignetteMetrics.confusionMatrix.fn === 0 ? "#f0fdf4" : "#fee2e2",
+                  border: `1.5px solid ${vignetteMetrics.confusionMatrix.fn === 0 ? "#86efac" : "#fca5a5"}`,
+                  borderRadius: 10,
+                  padding: "0.75rem 1rem",
+                  marginBottom: "1rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <span style={{ fontWeight: 800, color: vignetteMetrics.confusionMatrix.fn === 0 ? "#166534" : "#991b1b" }}>
+                    {t("missedUrgent", { count: vignetteMetrics.confusionMatrix.fn, total: evaluationRows.length }, lang)}
+                  </span>
+                  <div style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+                    {vignetteMetrics.confusionMatrix.fn === 0 ? "✓ Zero missed emergency decisions" : "⚠️ Discrepancy observed against gold standard"}
                   </div>
                 </div>
-              ) : (
-                <div
-                  style={{
-                    background: "#f0fdf4",
-                    border: "1.5px solid #86efac",
-                    borderRadius: "var(--radius)",
-                    padding: "0.75rem 1rem",
-                    marginBottom: "1rem",
-                    color: "#166534",
-                    fontWeight: 700,
-                    fontSize: "0.9rem",
-                  }}
+                <button
+                  className="btn btn-secondary"
+                  style={{ minHeight: 32, padding: "0.2rem 0.6rem", fontSize: "0.75rem" }}
+                  onClick={handleExportVignetteResults}
                 >
-                  ✓ Zero missed urgent cases in this evaluation dataset (0 False Negatives).
-                </div>
-              )}
-
-              {/* Confusion Matrix Table */}
-              <div className="card" style={{ marginBottom: "1rem" }}>
-                <h3 style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: "0.5rem" }}>
-                  Confusion Matrix (কনফিউশন ম্যাট্রিক্স):
-                </h3>
-                <table style={{ width: "100%", fontSize: "0.8rem", borderCollapse: "collapse", textAlign: "center" }}>
-                  <thead>
-                    <tr style={{ background: "#f8fafc" }}>
-                      <th style={{ padding: "6px", border: "1px solid #e2e8f0" }}></th>
-                      <th style={{ padding: "6px", border: "1px solid #e2e8f0" }}>Actual Positive (Yes)</th>
-                      <th style={{ padding: "6px", border: "1px solid #e2e8f0" }}>Actual Negative (No)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td style={{ fontWeight: 700, padding: "6px", border: "1px solid #e2e8f0" }}>App: Yes</td>
-                      <td style={{ background: "#d1fae5", fontWeight: 800, padding: "6px", border: "1px solid #e2e8f0" }}>
-                        TP = {vignetteMetrics.confusionMatrix.tp}
-                      </td>
-                      <td style={{ background: "#fee2e2", fontWeight: 800, padding: "6px", border: "1px solid #e2e8f0" }}>
-                        FP = {vignetteMetrics.confusionMatrix.fp}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style={{ fontWeight: 700, padding: "6px", border: "1px solid #e2e8f0" }}>App: No</td>
-                      <td style={{ background: "#fee2e2", fontWeight: 800, padding: "6px", border: "1px solid #e2e8f0" }}>
-                        FN = {vignetteMetrics.confusionMatrix.fn}
-                      </td>
-                      <td style={{ background: "#d1fae5", fontWeight: 800, padding: "6px", border: "1px solid #e2e8f0" }}>
-                        TN = {vignetteMetrics.confusionMatrix.tn}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                  📥 {t("exportResults", lang)}
+                </button>
               </div>
 
-              {/* Export Results */}
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button className="btn btn-secondary btn-full" onClick={handleExportVignetteResults}>
-                  📥 ভিনিয়েট মূল্যায়ন ফলাফল CSV ডাউনলোড (Export CSV)
-                </button>
-                <button className="btn btn-primary btn-full" onClick={() => window.print()}>
-                  🖨️ সংক্ষিপ্ত প্রতিবেদন প্রিন্ট (Print Summary)
-                </button>
+              {/* Detailed Vignette Result Rows */}
+              <div className="card" style={{ padding: "0.5rem" }}>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", fontSize: "0.8rem", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc", borderBottom: "1.5px solid var(--color-border)" }}>
+                        <th style={{ padding: "0.5rem", textAlign: "left" }}>{t("evalTableVignetteId", lang)}</th>
+                        <th style={{ padding: "0.5rem", textAlign: "center" }}>{t("evalTableEngine", lang)}</th>
+                        <th style={{ padding: "0.5rem", textAlign: "center" }}>{t("evalTableGold", lang)}</th>
+                        <th style={{ padding: "0.5rem", textAlign: "center" }}>{t("evalTableMatch", lang)}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {evaluationRows.map((r) => {
+                        const isMatch = r.appFlag === r.majorityActual;
+                        return (
+                          <tr key={r.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                            <td style={{ padding: "0.45rem", fontWeight: 700 }}>{r.id}</td>
+                            <td style={{ padding: "0.45rem", textAlign: "center" }}>
+                              <span style={{
+                                padding: "2px 6px",
+                                borderRadius: 4,
+                                fontSize: "0.7rem",
+                                fontWeight: 700,
+                                background: r.appFlag === "yes" ? "#fee2e2" : "#d1fae5",
+                                color: r.appFlag === "yes" ? "#991b1b" : "#065f46",
+                              }}>
+                                {r.appFlag.toUpperCase()}
+                              </span>
+                            </td>
+                            <td style={{ padding: "0.45rem", textAlign: "center" }}>
+                              <span style={{
+                                padding: "2px 6px",
+                                borderRadius: 4,
+                                fontSize: "0.7rem",
+                                fontWeight: 700,
+                                background: r.majorityActual === "yes" ? "#fee2e2" : "#d1fae5",
+                                color: r.majorityActual === "yes" ? "#991b1b" : "#065f46",
+                              }}>
+                                {r.majorityActual.toUpperCase()}
+                              </span>
+                            </td>
+                            <td style={{ padding: "0.45rem", textAlign: "center", fontWeight: 800 }}>
+                              {isMatch ? "✓ PASS" : "✗ MISMATCH"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
@@ -533,93 +560,50 @@ export default function EvaluatePage() {
 
       {/* ────────────────── TAB 2: BRAND MAPPING ────────────────── */}
       {activeTab === "brands" && (
-        <div>
-          <div className="card" style={{ marginBottom: "1rem" }}>
-            <span style={{ fontWeight: 700, fontSize: "0.95rem", display: "block", marginBottom: "0.5rem" }}>
-              ফার্মাসিস্ট গ্রাউন্ড-ট্রুথ বনাম AI ড্রাগ ক্লাস মূল্যায়ন:
-            </span>
-            <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginBottom: "0.75rem" }}>
-              Enter CSV with format: <code>brand, predicted_class, ground_truth_class</code>
-            </p>
+        <div className="card">
+          <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.5rem", color: "var(--color-primary-dark)" }}>
+            {t("reviewTabBrands", { count: "" }, lang).trim()}
+          </h3>
+          <textarea
+            className="input"
+            rows={4}
+            value={brandCsv}
+            onChange={(e) => setBrandCsv(e.target.value)}
+            placeholder="brand,predicted_class,gold_standard_class..."
+            style={{ fontFamily: "monospace", fontSize: "0.75rem", marginBottom: "0.5rem" }}
+          />
+          <button className="btn btn-primary" onClick={handleEvaluateBrandMapping}>
+            {t("runEvaluation", lang)}
+          </button>
 
-            <textarea
-              className="input"
-              rows={4}
-              value={brandCsv}
-              onChange={(e) => setBrandCsv(e.target.value)}
-              placeholder={`brand,predicted_class,ground_truth_class
-Envas,ace_inhibitor,ace_inhibitor
-Losar,arb,arb
-Glycomet,metformin,metformin
-UnknownBrand,unknown,sulfonylurea`}
-              style={{ fontFamily: "monospace", fontSize: "0.75rem" }}
-            />
-
-            <button
-              className="btn btn-primary"
-              style={{ marginTop: "0.5rem" }}
-              onClick={handleEvaluateBrandMapping}
-            >
-              ব্র্যান্ড ম্যাপিং মেট্রিক্স বিশ্লেষণ করুন ➔
-            </button>
-          </div>
-
-          {!brandMetrics ? (
-            <div className="card" style={{ textAlign: "center", padding: "2rem" }}>
-              <h3 style={{ fontSize: "1.1rem", fontWeight: 700 }}>No data yet.</h3>
-              <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>
-                ওপরে ব্র্যান্ড এবং গ্রাউন্ড-ট্রুথ ডেটা লিখে বোতাম চাপুন।
-              </p>
-            </div>
-          ) : (
-            <div className="card">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-                <span style={{ fontWeight: 700 }}>Overall Accuracy:</span>
-                <span style={{ fontSize: "1.4rem", fontWeight: 800, color: "var(--color-primary-dark)" }}>
-                  {formatMetricPercent(brandMetrics.overallAccuracy)}
-                </span>
+          {brandMetrics && (
+            <div style={{ marginTop: "1rem" }}>
+              <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>
+                Accuracy: {formatMetricPercent(brandMetrics.overallAccuracy)} (N = {brandMetrics.n})
               </div>
-              <p style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>
-                Total evaluated: {brandMetrics.n} brands.
-              </p>
-
-              {brandMetrics.errors.length > 0 && (
-                <div style={{ marginTop: "0.75rem" }}>
-                  <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--color-danger)" }}>
-                    Errors List ({brandMetrics.errors.length}):
-                  </span>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "4px" }}>
-                    {brandMetrics.errors.map((err, i) => (
-                      <div key={i} style={{ fontSize: "0.75rem", background: "#fef2f2", padding: "4px 8px", borderRadius: 4 }}>
-                        <strong>{err.brand}</strong>: predicted "{err.predictedClass}" but ground truth is "{err.actualClass}".
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
       )}
 
-      {/* ────────────────── TAB 3: SPEECH EXTRACTION ────────────────── */}
+      {/* ────────────────── TAB 3: SPEECH ACCURACY ────────────────── */}
       {activeTab === "speech" && (
-        <div>
-          <div className="card" style={{ marginBottom: "1rem" }}>
-            <label style={{ fontSize: "0.85rem", fontWeight: 700, display: "block", marginBottom: "0.3rem" }}>
-              কথার প্রতিলিপি (Spoken Transcript):
-            </label>
-            <textarea
+        <div className="card">
+          <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.5rem", color: "var(--color-primary-dark)" }}>
+            {t("stepSymptomsMicPrompt", lang)}
+          </h3>
+          <div style={{ marginBottom: "0.5rem" }}>
+            <label style={{ fontSize: "0.8rem", fontWeight: 600 }}>{t("audioTranscriptLabel", lang)}</label>
+            <input
+              type="text"
               className="input"
-              rows={2}
               value={speechTranscript}
               onChange={(e) => setSpeechTranscript(e.target.value)}
-              placeholder="e.g. কাল থেকে পেট খারাপ ও বমি হচ্ছে, জল খেতে পারছে কিন্তু প্রস্রাব কম..."
+              placeholder="e.g. কাল থেকে পাতলা পায়খানা ও বমি হচ্ছে..."
             />
-
-            <label style={{ fontSize: "0.85rem", fontWeight: 700, display: "block", marginTop: "0.75rem", marginBottom: "0.3rem" }}>
-              প্রকৃত প্রত্যাশিত ফলাফল (Ground Truth JSON):
-            </label>
+          </div>
+          <div style={{ marginBottom: "0.75rem" }}>
+            <label style={{ fontSize: "0.8rem", fontWeight: 600 }}>{t("groundTruthJsonLabel", lang)}</label>
             <textarea
               className="input"
               rows={3}
@@ -627,39 +611,15 @@ UnknownBrand,unknown,sulfonylurea`}
               onChange={(e) => setSpeechGroundTruth(e.target.value)}
               style={{ fontFamily: "monospace", fontSize: "0.75rem" }}
             />
-
-            <button
-              className="btn btn-primary"
-              style={{ marginTop: "0.75rem" }}
-              disabled={isEvaluatingSpeech}
-              onClick={handleEvaluateSpeech}
-            >
-              {isEvaluatingSpeech ? "বিশ্লেষণ হচ্ছে..." : "স্পিচ নির্ভুলতা পরিমাপ করুন ➔"}
-            </button>
           </div>
+          <button className="btn btn-primary" onClick={handleEvaluateSpeech} disabled={isEvaluatingSpeech}>
+            {isEvaluatingSpeech ? t("loading", lang) : t("runEvaluation", lang)}
+          </button>
 
-          {!speechTestOutput ? (
-            <div className="card" style={{ textAlign: "center", padding: "2rem" }}>
-              <h3 style={{ fontSize: "1.1rem", fontWeight: 700 }}>No data yet.</h3>
-              <p style={{ fontSize: "0.8rem", color: "var(--color-text-muted)", marginTop: "0.25rem" }}>
-                কথোপকথন ও প্রত্যাশিত JSON প্রদান করে মেট্রিক্স পরিমাপ করুন।
-              </p>
-            </div>
-          ) : (
-            <div className="card">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                <span style={{ fontWeight: 700 }}>Field Accuracy:</span>
-                <span style={{ fontSize: "1.4rem", fontWeight: 800, color: "var(--color-primary-dark)" }}>
-                  {formatMetricPercent(speechTestOutput.overallAccuracy)}
-                </span>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "0.8rem", marginTop: "0.5rem" }}>
-                {Object.entries(speechTestOutput.perField).map(([field, item]) => (
-                  <div key={field} style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>{field}:</span>
-                    <span style={{ fontWeight: 700 }}>{formatMetricPercent(item.accuracy)}</span>
-                  </div>
-                ))}
+          {speechTestOutput && (
+            <div style={{ marginTop: "1rem" }}>
+              <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>
+                Exact Match Ratio: {formatMetricPercent(speechTestOutput.overallAccuracy)}
               </div>
             </div>
           )}
